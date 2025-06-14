@@ -222,7 +222,7 @@ def build(bld):
 	if bld.env.SERVER:
 		# TODO: avoid possible name collision when client is built without launcher
 		# but dedicated server is enabled. They're both called 'xash' in this case
-		bld.program(
+		bld.stlib(
 			source = copy(source),
 			target = 'xash',
 			use = copy(libs),
