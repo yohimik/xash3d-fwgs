@@ -67,7 +67,7 @@ static int Sys_Start( void )
 	return Host_Main( szArgc, szArgv, szGameDir, 0, Sys_ChangeGame );
 }
 
-int EXPORT Launcher_Main( int argc, char **argv )
+int main( int argc, char **argv )
 {
 #if XASH_PSVITA
 	// inject -dev -console into args if required
