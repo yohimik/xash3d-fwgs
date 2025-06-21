@@ -1537,27 +1537,27 @@ void NET_SendPacketEx( netsrc_t sock, size_t length, const void *data, netadr_t 
 	SOCKET		net_socket = 0;
 	netadrtype_t type = NET_NetadrType( &to );
 
-	if( !net.initialized || type == NA_LOOPBACK )
-	{
-		NET_SendLoopPacket( sock, length, data, to );
-		return;
-	}
-	else if( type == NA_BROADCAST || type == NA_IP )
-	{
-		net_socket = net.ip_sockets[sock];
-		if( !NET_IsSocketValid( net_socket ))
-			return;
-	}
-	else if( type == NA_MULTICAST_IP6 || type == NA_IP6 )
-	{
-		net_socket = net.ip6_sockets[sock];
-		if( !NET_IsSocketValid( net_socket ))
-			return;
-	}
-	else
-	{
-		Host_Error( "%s: bad address type %i (%i, %i)\n", __func__, to.type, to.ip6_0[0], to.ip6_0[1] );
-	}
+//	if( !net.initialized || type == NA_LOOPBACK )
+//	{
+//		NET_SendLoopPacket( sock, length, data, to );
+//		return;
+//	}
+//	else if( type == NA_BROADCAST || type == NA_IP )
+//	{
+//		net_socket = net.ip_sockets[sock];
+//		if( !NET_IsSocketValid( net_socket ))
+//			return;
+//	}
+//	else if( type == NA_MULTICAST_IP6 || type == NA_IP6 )
+//	{
+//		net_socket = net.ip6_sockets[sock];
+//		if( !NET_IsSocketValid( net_socket ))
+//			return;
+//	}
+//	else
+//	{
+//		Host_Error( "%s: bad address type %i (%i, %i)\n", __func__, to.type, to.ip6_0[0], to.ip6_0[1] );
+//	}
 
 	NET_NetadrToSockadr( &to, &addr );
 
