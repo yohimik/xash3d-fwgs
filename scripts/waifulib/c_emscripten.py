@@ -39,7 +39,7 @@ def gcc_modifier_emscripten(conf):
 	conf.env.CFLAGS_cstlib = ['-fPIC']
 	conf.env.CFLAGS_cprogram = ['-sMAIN_MODULE=1']
 
-	conf.env.LINKFLAGS_cshlib = ['-sSIDE_MODULE=1']
+	conf.env.LINKFLAGS_cshlib = ['-sSIDE_MODULE=1', '-Oz', '--closure', '1', '--minify-wasm-imports']
 	conf.env.LINKFLAGS_cprogram = ['-sMAIN_MODULE=1']
 
 @conf
@@ -52,7 +52,7 @@ def gxx_modifier_emscripten(conf):
 	conf.env.CXXFLAGS_cxxstlib = ['-fPIC']
 	conf.env.CXXFLAGS_cxxprogram = ['-sMAIN_MODULE=1']
 
-	conf.env.LINKFLAGS_cxxshlib = ['-sSIDE_MODULE=1']
+	conf.env.LINKFLAGS_cxxshlib = ['-sSIDE_MODULE=1', '-Oz', '--closure', '1', '--minify-wasm-imports']
 	conf.env.LINKFLAGS_cxxprogram = ['-sMAIN_MODULE=1']
 
 @feature('cxxprogram', 'cprogram')
