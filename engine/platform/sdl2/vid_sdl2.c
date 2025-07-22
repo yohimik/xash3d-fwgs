@@ -724,10 +724,11 @@ static qboolean VID_CreateWindow( const int input_width, const int input_height,
 	if( !glw_state.software )
 		SetBits( flags, SDL_WINDOW_OPENGL );
 
-	if( position_undefined )
-		rect.x = rect.y = SDL_WINDOWPOS_UNDEFINED;
+#if XASH_EMSCRIPTEN // chromium based browsers have a bug with dynamic alpha channel attribute update.
+	SDL_GL_SetAttribute( SDL_GL_ALPHA_SIZE, 0 );
+#endif
 
-	switch( window_mode )
+	if( window_mode == WINDOW_MODE_WINDOWED )
 	{
 	// in windowed mode, we only want to ensure that
 	// window fits on any display, and if not, reset position
