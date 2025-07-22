@@ -1359,7 +1359,7 @@ typedef int (*recvfrom_callback_t)( int sockfd, byte *buf, int len, int flags, s
 static recvfrom_callback_t recvfrom_callback = NULL;
 
 EMSCRIPTEN_KEEPALIVE
-void retgister_recvfrom_callback(recvfrom_callback_t cb) {
+void register_recvfrom_callback(recvfrom_callback_t cb) {
 	recvfrom_callback = cb;
 }
 
@@ -1477,7 +1477,7 @@ typedef void (*sendto_callback_t)( const void *message, size_t length, int flags
 static sendto_callback_t sendto_callback = NULL;
 
 EMSCRIPTEN_KEEPALIVE
-void retgister_sendto_callback(sendto_callback_t cb) {
+void register_sendto_callback(sendto_callback_t cb) {
 	sendto_callback = cb;
 }
 
