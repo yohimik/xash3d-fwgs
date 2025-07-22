@@ -640,6 +640,9 @@ static void R_CollectRendererNames( void )
 #if XASH_REF_GL4ES_ENABLED
 		"gl4es",
 #endif
+#if XASH_REF_WEBGL2_ENABLED
+		"webgl",
+#endif
 #if XASH_REF_GLES3COMPAT_ENABLED
 		"gles3compat",
 #endif
@@ -662,6 +665,9 @@ static void R_CollectRendererNames( void )
 #endif
 #if XASH_REF_GL4ES_ENABLED
 		"GL4ES",
+#endif
+#if XASH_REF_WEBGL2_ENABLED
+		"WEBGL (gl2_shim)",
 #endif
 #if XASH_REF_GLES3COMPAT_ENABLED
 		"GLES3 (gl2_shim)",
