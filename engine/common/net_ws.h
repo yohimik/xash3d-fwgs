@@ -16,6 +16,32 @@ GNU General Public License for more details.
 #ifndef NET_WS_H
 #define NET_WS_H
 
+#include <sys/types.h>
+#include <sys/socket.h>
+
+typedef int (*recvfrom_func_t)(
+    int sockfd,
+    void *buf,
+    int len,
+    int flags,
+    struct sockaddr *src_addr,
+    socklen_t *addrlen
+);
+
+void RegisterRecvFromCallback(recvfrom_func_t fn);
+
+typedef int (*sendto_func_t)(
+    int sockfd,
+    char **packets,
+    size_t *sizes,
+    int packet_count,
+    int seq_num,
+	const struct sockaddr_storage *to,
+	int to_len
+);
+
+void RegisterSendToCallback(sendto_func_t fn);
+
 typedef enum
 {
 	NS_CLIENT,
