@@ -1451,81 +1451,66 @@ Fragment long packets, send short directly
 ==================
 */
 static int NET_SendLong(netsrc_t sock, int net_socket, const char *buf, size_t len, int flags, const struct sockaddr_storage *to, size_t tolen, size_t splitsize) {
-	char **fragments = NULL;
-	size_t *sizes = NULL;
-	int packet_count = 0;
-	int sequence_number;
-	int total_size = 0;
-	int ret = 0; // Declare early to avoid mixed code/declarations
+	int packet_count = 1, sequence_number = 0, total_size = 0, ret = 0;
+    char *fragment_data_block = NULL;
+    char **fragments = NULL;
+	SPLITPACKET *p = NULL;
+    size_t *sizes = NULL;
+	size_t fragment_size;
+	size_t block_size;
 
-#ifdef NET_USE_FRAGMENTS
-	if (splitsize > sizeof(SPLITPACKET) && sock == NS_SERVER && len > splitsize) {
-		// --- Fragmented path ---
-		int body_size = splitsize - sizeof(SPLITPACKET);
-		int i;
-		SPLITPACKET *pPacket = NULL;
-		size_t size = 0;
-		size_t packet_size = 0;
+    if (splitsize > sizeof(SPLITPACKET) && sock == NS_SERVER && len > splitsize) {
+        int body_size = splitsize - sizeof(SPLITPACKET);
+        packet_count = (len + body_size - 1) / body_size;
+        sequence_number = ++net.sequence_number;
+        if (sequence_number <= 0) sequence_number = net.sequence_number = 1;
 
-		packet_count = (len + body_size - 1) / body_size;
+        fragment_size = sizeof(SPLITPACKET) + body_size;
+        block_size = fragment_size * packet_count;
+        fragment_data_block = malloc(block_size);
+        fragments = malloc(packet_count * sizeof(char *));
+        sizes = malloc(packet_count * sizeof(size_t));
 
-		fragments = (char **)malloc(packet_count * sizeof(char *));
-		sizes = (size_t *)malloc(packet_count * sizeof(size_t));
-		if (!fragments || !sizes) goto cleanup;
+        if (!fragment_data_block || !fragments || !sizes) goto cleanup;
 
-		sequence_number = ++net.sequence_number;
-		if (sequence_number <= 0)
-			sequence_number = net.sequence_number = 1;
+        for (int i = 0; i < packet_count; ++i) {
+            size_t data_offset = i * body_size;
+            size_t size = Q_min(body_size, len - data_offset);
+            fragments[i] = fragment_data_block + i * fragment_size;
+            p = (SPLITPACKET *)fragments[i];
+            p->sequence_number = sequence_number;
+            p->net_id = NET_HEADER_SPLITPACKET;
+            p->packet_id = (i << 8) + packet_count;
 
-		for (i = 0; i < packet_count; ++i) {
-			size = Q_min(body_size, len - i * body_size);
-			packet_size = size + sizeof(SPLITPACKET);
-			fragments[i] = (char *)malloc(packet_size);
-			if (!fragments[i]) goto cleanup;
+            memcpy(fragments[i] + sizeof(SPLITPACKET), buf + data_offset, size);
+            sizes[i] = sizeof(SPLITPACKET) + size;
+            total_size += size;
+        }
+    } else {
+        // Unfragmented path
+        sequence_number = ++net.sequence_number;
+        if (sequence_number <= 0) sequence_number = net.sequence_number = 1;
 
-			pPacket = (SPLITPACKET *)fragments[i];
-			pPacket->sequence_number = sequence_number;
-			pPacket->net_id = NET_HEADER_SPLITPACKET;
-			pPacket->packet_id = (i << 8) + packet_count;
+        fragments = malloc(sizeof(char *));
+        sizes = malloc(sizeof(size_t));
+        if (!fragments || !sizes) goto cleanup;
 
-			memcpy(fragments[i] + sizeof(SPLITPACKET), buf + i * body_size, size);
-			sizes[i] = packet_size;
-			total_size += (int)size;
-		}
-	}
-	else
-#endif
-	{
-		// --- Non-fragmented path ---
-		packet_count = 1;
-		sequence_number = ++net.sequence_number;
-		if (sequence_number <= 0)
-			sequence_number = net.sequence_number = 1;
+        fragments[0] = (char *)buf;  // Avoid copying if possible
+        sizes[0] = len;
+        total_size = (int)len;
+    }
 
-		fragments = (char **)malloc(sizeof(char *));
-		sizes = (size_t *)malloc(sizeof(size_t));
-		if (!fragments || !sizes) goto cleanup;
-
-		fragments[0] = (char *)malloc(len);
-		if (!fragments[0]) goto cleanup;
-
-		memcpy(fragments[0], buf, len);
-		sizes[0] = len;
-		total_size = (int)len;
-	}
-
-	ret = g_sendto(sock, fragments, sizes, packet_count, sequence_number, to, tolen);
+    ret = g_sendto(sock, fragments, sizes, packet_count, sequence_number, to, tolen);
 
 cleanup:
-	if (fragments) {
-		int i;
-		for (i = 0; i < packet_count; ++i)
-			free(fragments[i]);
-		free(fragments);
-	}
-	if (sizes) free(sizes);
-
-	return (ret < 0) ? ret : total_size;
+    if (fragment_data_block) free(fragment_data_block);
+    if (fragments && fragments[0] != buf) {
+        for (int i = 0; i < packet_count; ++i)
+            free(fragments[i]);
+    }
+    free(fragments);
+    free(sizes);
+    return (ret < 0) ? ret : total_size;
 }
 
 /*
