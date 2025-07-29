@@ -1352,16 +1352,14 @@ static qboolean NET_GetLong( byte *pData, int size, size_t *outSize, int splitsi
 	return false;
 }
 
-#include <emscripten/emscripten.h>
-
-typedef int (*recvfrom_callback_t)( int sockfd, byte *buf, int len, int flags, struct sockaddr *src_addr, socklen_t *addrlen );
-
-static recvfrom_callback_t recvfrom_callback = NULL;
-
-EMSCRIPTEN_KEEPALIVE
-void register_recvfrom_callback(recvfrom_callback_t cb) {
-	recvfrom_callback = cb;
-}
+extern int recvfrom_js(
+	int sockfd,
+	void *buf,
+	int len,
+	int flags,
+	struct sockaddr *src_addr,
+	socklen_t *addrlen
+);
 
 /*
 ==================
@@ -1389,13 +1387,7 @@ static qboolean NET_QueuePacket( netsrc_t sock, netadr_t *from, byte *data, size
 		}
 
 		addr_len = sizeof( addr );
-		if (recvfrom_callback) {
-			ret = recvfrom_callback( net_socket, buf, sizeof( buf ), 0, (struct sockaddr *)&addr, &addr_len );
-		} else {
-			if( !NET_IsSocketValid( net_socket ))
-				continue;
-			ret = recvfrom( net_socket, buf, sizeof( buf ), 0, (struct sockaddr *)&addr, &addr_len );
-		}
+		ret = recvfrom_js( net_socket, buf, sizeof( buf ), 0, (struct sockaddr *)&addr, &addr_len );
 
 		NET_SockadrToNetadr( &addr, from );
 
@@ -1472,15 +1464,15 @@ qboolean NET_GetPacket( netsrc_t sock, netadr_t *from, byte *data, size_t *lengt
 	}
 }
 
-typedef void (*sendto_callback_t)( const void *message, size_t length, int flags );
-
-static sendto_callback_t sendto_callback = NULL;
-
-EMSCRIPTEN_KEEPALIVE
-void register_sendto_callback(sendto_callback_t cb) {
-	sendto_callback = cb;
-}
-
+extern int sendto_js(
+	int sockfd,
+	char **packets,
+	size_t *sizes,
+	int packet_count,
+	int seq_num,
+	const struct sockaddr_storage *to,
+	size_t to_len
+);
 
 /*
 ==================
@@ -1489,74 +1481,67 @@ NET_SendLong
 Fragment long packets, send short directly
 ==================
 */
-static int NET_SendLong( netsrc_t sock, int net_socket, const char *buf, size_t len, int flags, const struct sockaddr_storage *to, size_t tolen, size_t splitsize )
-{
-#ifdef NET_USE_FRAGMENTS
-	// do we need to break this packet up?
-	if( splitsize > sizeof( SPLITPACKET ) && sock == NS_SERVER && len > splitsize )
-	{
-		char		packet[SPLITPACKET_MAX_SIZE];
-		int		total_sent, size, packet_count;
-		int		ret, packet_number;
-		int body_size = splitsize - sizeof( SPLITPACKET );
-		SPLITPACKET	*pPacket;
+static int NET_SendLong(netsrc_t sock, int net_socket, const char *buf, size_t len, int flags, const struct sockaddr_storage *to, size_t tolen, size_t splitsize) {
+	int packet_count = 1, sequence_number = 0, total_size = 0, ret = 0;
+    char *fragment_data_block = NULL;
+    char **fragments = NULL;
+	SPLITPACKET *p = NULL;
+    size_t *sizes = NULL;
+	size_t fragment_size;
+	size_t block_size;
 
-		net.sequence_number++;
-		if( net.sequence_number <= 0 )
-			net.sequence_number = 1;
+    if (splitsize > sizeof(SPLITPACKET) && sock == NS_SERVER && len > splitsize) {
+        int body_size = splitsize - sizeof(SPLITPACKET);
+        packet_count = (len + body_size - 1) / body_size;
+        sequence_number = ++net.sequence_number;
+        if (sequence_number <= 0) sequence_number = net.sequence_number = 1;
 
-		pPacket = (SPLITPACKET *)packet;
-		pPacket->sequence_number = net.sequence_number;
-		pPacket->net_id = NET_HEADER_SPLITPACKET;
-		packet_number = 0;
-		total_sent = 0;
-		packet_count = (len + body_size - 1) / body_size;
+        fragment_size = sizeof(SPLITPACKET) + body_size;
+        block_size = fragment_size * packet_count;
+        fragment_data_block = malloc(block_size);
+        fragments = malloc(packet_count * sizeof(char *));
+        sizes = malloc(packet_count * sizeof(size_t));
 
-		while( len > 0 )
-		{
-			size = Q_min( body_size, len );
-			pPacket->packet_id = (packet_number << 8) + packet_count;
-			memcpy( packet + sizeof( SPLITPACKET ), buf + ( packet_number * body_size ), size );
+        if (!fragment_data_block || !fragments || !sizes) goto cleanup;
 
-			if( net_showpackets.value == 3.0f )
-			{
-				netadr_t	adr;
+        for (int i = 0; i < packet_count; ++i) {
+            size_t data_offset = i * body_size;
+            size_t size = Q_min(body_size, len - data_offset);
+            fragments[i] = fragment_data_block + i * fragment_size;
+            p = (SPLITPACKET *)fragments[i];
+            p->sequence_number = sequence_number;
+            p->net_id = NET_HEADER_SPLITPACKET;
+            p->packet_id = (i << 8) + packet_count;
 
-				memset( &adr, 0, sizeof( adr ));
-				NET_SockadrToNetadr( to, &adr );
+            memcpy(fragments[i] + sizeof(SPLITPACKET), buf + data_offset, size);
+            sizes[i] = sizeof(SPLITPACKET) + size;
+            total_size += size;
+        }
+    } else {
+        // Unfragmented path
+        sequence_number = ++net.sequence_number;
+        if (sequence_number <= 0) sequence_number = net.sequence_number = 1;
 
-				Con_Printf( "Sending split %i of %i with %i bytes and seq %i to %s\n",
-					packet_number + 1, packet_count, size, net.sequence_number, NET_AdrToString( adr ));
-			}
+        fragments = malloc(sizeof(char *));
+        sizes = malloc(sizeof(size_t));
+        if (!fragments || !sizes) goto cleanup;
 
-			if (sendto_callback) {
-				ret = 10;
-				sendto_callback( packet, size + sizeof( SPLITPACKET ), flags );
-			} else {
-				ret = sendto( net_socket, packet, size + sizeof( SPLITPACKET ), flags, (const struct sockaddr *)to, tolen );
-			}
-			if( ret < 0 ) return ret; // error
+        fragments[0] = (char *)buf;  // Avoid copying if possible
+        sizes[0] = len;
+        total_size = (int)len;
+    }
 
-			if( ret >= size )
-				total_sent += size;
-			len -= size;
-			packet_number++;
-			Platform_NanoSleep( 100 * 1000 );
-		}
+    ret = sendto_js(sock, fragments, sizes, packet_count, sequence_number, to, tolen);
 
-		return total_sent;
-	}
-	else
-#endif
-	{
-		if (sendto_callback) {
-			sendto_callback(buf, len, flags);
-			return 10;
-		} else {
-			// no fragmenantion for client connection
-			return sendto( net_socket, buf, len, flags, (const struct sockaddr *)to, tolen );
-		}
-	}
+cleanup:
+    if (fragment_data_block) free(fragment_data_block);
+    if (fragments && fragments[0] != buf) {
+        for (int i = 0; i < packet_count; ++i)
+            free(fragments[i]);
+    }
+    free(fragments);
+    free(sizes);
+    return (ret < 0) ? ret : total_size;
 }
 
 /*
