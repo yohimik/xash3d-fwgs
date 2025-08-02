@@ -644,7 +644,7 @@ def options(opt):
 		help='enable building for iOS Simulator [default: %(default)s]')
 
 def configure(conf):
-	if 'CROSS_COMPILE' in conf.environ:
+	if 'CROSS_COMPILE' in conf.environ and not conf.options.EMSCRIPTEN:
 		toolchain_path = conf.environ['CROSS_COMPILE']
 		conf.environ['CC'] = toolchain_path + 'cc'
 		conf.environ['CXX'] = toolchain_path + 'c++'
