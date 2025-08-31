@@ -1520,87 +1520,161 @@ static int NET_SendLong(
 #endif
     int ret;
 
-    total_sent = 0;
-    packet_number = 0;
-    ret = 0;
+    /* Fast input validation - minimal checks for critical safety */
+    if (!buf || !to || len == 0) {
+        return -1;
+    }
+
+    /* Fast path: no fragmentation needed */
+    if (splitsize <= sizeof(SPLITPACKET) || sock != NS_SERVER || len <= splitsize) {
+        /* Single packet send - fastest path */
+        if (len > INT_MAX) return -1;
+        return sendto(net_socket, buf, (int)len, flags, (const struct sockaddr *)to, tolen);
+    }
 
 #ifdef NET_USE_FRAGMENTS
-    // check if we need to fragment
-    if (splitsize > sizeof(SPLITPACKET) && sock == NS_SERVER && len > splitsize)
-    {
-        body_size = (int)(splitsize - sizeof(SPLITPACKET));
-        packet_count = (int)((len + body_size - 1) / body_size);
+    /* Fragmentation path - optimized for speed */
+    body_size = (int)(splitsize - sizeof(SPLITPACKET));
 
-        header.sequence_number = ++net.sequence_number;
-        if (header.sequence_number <= 0) header.sequence_number = 1;
-        header.net_id = NET_HEADER_SPLITPACKET;
+    /* Quick safety check - avoid division by zero */
+    if (body_size <= 0) {
+        return -1;
+    }
+
+    packet_count = (int)((len + body_size - 1) / body_size);
+
+    /* Reasonable limit check - prevents massive allocations */
+    if (packet_count > 4096) {
+        return -1;
+    }
+
+    /* Setup packet header once */
+    header.sequence_number = ++net.sequence_number;
+    if (header.sequence_number <= 0) header.sequence_number = 1;
+    header.net_id = NET_HEADER_SPLITPACKET;
 
 #ifdef NET_USE_SEND_BATCH
-        fragments = NULL;
-        fragment_sizes = NULL;
-        packet_data = NULL;
+    /* Batch mode - fastest fragmentation method */
+    {
+        size_t meta_size;
+        size_t data_size;
+        char *memory_block;
+        const char *src_ptr;
+        char *dst_ptr;
+        size_t remaining;
 
-        fragments = (char **)calloc(packet_count, sizeof(char *));
-        fragment_sizes = (int *)calloc(packet_count, sizeof(int));
-        packet_data = (char *)malloc(packet_count * (sizeof(SPLITPACKET) + body_size));
-        if (!fragments || !fragment_sizes || !packet_data)
-        {
-            ret = -1;
-            goto cleanup;
+        /* Single allocation block for all metadata */
+        meta_size = packet_count * (sizeof(char*) + sizeof(int));
+        data_size = (size_t)packet_count * (sizeof(SPLITPACKET) + body_size);
+
+        /* Check for overflow in a fast way */
+        if (data_size < packet_count || meta_size < packet_count) {
+            return -1;
         }
+
+        memory_block = (char *)malloc(meta_size + data_size);
+        if (!memory_block) {
+            return -1;
+        }
+
+        /* Fast pointer setup */
+        fragments = (char **)memory_block;
+        fragment_sizes = (int *)(memory_block + packet_count * sizeof(char*));
+        packet_data = memory_block + meta_size;
+
+        /* Optimized fragment creation loop */
+        src_ptr = buf;
+        dst_ptr = packet_data;
+        remaining = len;
 
         for (packet_number = 0; packet_number < packet_count; packet_number++)
         {
-            int size = Q_min(body_size, (int)len - packet_number*body_size);
-            SPLITPACKET *pPacket = (SPLITPACKET *)(packet_data + packet_number*(sizeof(SPLITPACKET)+body_size));
+            int size;
+            SPLITPACKET *pPacket;
+            char *payload;
+
+            size = (int)((remaining < (size_t)body_size) ? remaining : body_size);
+
+            pPacket = (SPLITPACKET *)dst_ptr;
             *pPacket = header;
             pPacket->packet_id = (packet_number << 8) + packet_count;
 
-            memcpy((char *)pPacket + sizeof(SPLITPACKET),
-                   buf + packet_number*body_size, size);
+            /* Fast copy - compiler can optimize this better than separate memcpy */
+            payload = dst_ptr + sizeof(SPLITPACKET);
+            memcpy(payload, src_ptr, size);
 
-            fragments[packet_number] = (char *)pPacket;
+            fragments[packet_number] = dst_ptr;
             fragment_sizes[packet_number] = size + sizeof(SPLITPACKET);
+
+            /* Advance pointers */
+            src_ptr += size;
+            dst_ptr += sizeof(SPLITPACKET) + body_size;
+            remaining -= size;
         }
 
         ret = sendto_batch(net_socket, fragments, fragment_sizes,
                            packet_count, flags, to, (int)tolen);
-        if (ret >= 0)
-            total_sent = ret - packet_count * sizeof(SPLITPACKET);
 
-    cleanup:
-        free(fragments);
-        free(fragment_sizes);
-        free(packet_data);
+        if (ret >= 0) {
+            total_sent = ret - packet_count * sizeof(SPLITPACKET);
+            /* Ensure non-negative result */
+            if (total_sent < 0) total_sent = 0;
+        }
+
+        free(memory_block);
         return (ret < 0) ? ret : total_sent;
+    }
 
 #else
-        // non-batch: send each fragment individually
+    /* Non-batch mode - optimized individual sends */
+    {
+        const char *src_ptr;
+        size_t remaining;
+
+        total_sent = 0;
+        src_ptr = buf;
+        remaining = len;
+
         for (packet_number = 0; packet_number < packet_count; packet_number++)
         {
             char packet[SPLITPACKET_MAX_SIZE];
-            SPLITPACKET *pPacket = (SPLITPACKET *)packet;
-            int size = Q_min(body_size, (int)len - packet_number*body_size);
+            SPLITPACKET *pPacket;
+            int size;
 
+            /* Stack allocation for better cache performance */
+            pPacket = (SPLITPACKET *)packet;
+            size = (int)((remaining < (size_t)body_size) ? remaining : body_size);
+
+            /* Quick bounds check */
+            if (size + sizeof(SPLITPACKET) > SPLITPACKET_MAX_SIZE) {
+                return -1;
+            }
+
+            /* Fast header setup and copy */
             *pPacket = header;
             pPacket->packet_id = (packet_number << 8) + packet_count;
-            memcpy(packet + sizeof(SPLITPACKET),
-                   buf + packet_number*body_size, size);
+            memcpy(packet + sizeof(SPLITPACKET), src_ptr, size);
 
             ret = sendto(net_socket, packet, size + sizeof(SPLITPACKET),
                          flags, (const struct sockaddr *)to, tolen);
             if (ret < 0) return ret;
-            total_sent += size;
 
-            Platform_NanoSleep(100 * 1000); // optional throttling
+            total_sent += size;
+            src_ptr += size;
+            remaining -= size;
+
+            /* Optional throttling - remove for maximum speed */
+            /* Platform_NanoSleep(100 * 1000); */
         }
         return total_sent;
-#endif
     }
 #endif
 
-    // no fragmentation
-    return sendto(net_socket, buf, len, flags, (const struct sockaddr *)to, tolen);
+#endif /* NET_USE_FRAGMENTS */
+
+    /* Should never reach here due to fast path above, but kept for safety */
+    if (len > INT_MAX) return -1;
+    return sendto(net_socket, buf, (int)len, flags, (const struct sockaddr *)to, tolen);
 }
 
 /*
