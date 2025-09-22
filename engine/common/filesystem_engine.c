@@ -366,7 +366,8 @@ void FS_Init( const char *basedir )
 	// FIXME: why do we call this function before InitStdio?
 	// because InitStdio immediately scans all available game directories
 	// and this better be reworked at some point
-	g_fsapi.SetCurrentDirectory( rootdir );
+	// emscripten fix?
+//	g_fsapi.SetCurrentDirectory( rootdir );
 
 	if( !g_fsapi.InitStdio( true, rootdir, basedir, gamedir, rodir ))
 	{
