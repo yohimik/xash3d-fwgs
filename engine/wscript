@@ -247,7 +247,7 @@ def build(bld):
 			target = 'xash',
 			use = copy(libs),
 			includes = includes,
-			defines = 'XASH_ENABLE_MAIN=1 XASH_DEDICATED=1',
+			defines = 'XASH_ENABLE_MAIN=1 XASH_DEDICATED=1 XASH_GO=1 NET_USE_SEND_BATCH=1',
 			rpath = bld.env.DEFAULT_RPATH,
 			install_path = bld.env.BINDIR,
 		)
