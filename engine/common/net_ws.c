@@ -25,8 +25,8 @@ GNU General Public License for more details.
 #include <SDL_thread.h>
 #endif
 
-#if XASH_GO
-#include "platform/go/net_go.h"
+#if XASH_LIB
+#include "platform/lib/net_lib.h"
 #endif
 
 
@@ -1433,6 +1433,35 @@ qboolean NET_GetPacket( netsrc_t sock, netadr_t *from, byte *data, size_t *lengt
 		return NET_QueuePacket( sock, from, data, length );
 	}
 }
+
+#ifndef XASH_LIB
+int sendto_batch(int sock, char *fragments[], int sizes[], int count,
+                 int flags, const struct sockaddr *to, int tolen)
+{
+    int total_sent = 0;
+
+    for (int i = 0; i < count; i++)
+    {
+        int ret = sendto(sock, fragments[i], sizes[i], flags, to, tolen);
+        if (ret < 0)
+        {
+            // stop on error
+            return ret;
+        }
+
+        // count only payload size (like sendto usually does)
+        if (ret >= sizes[i])
+            total_sent += (sizes[i] - (int)sizeof(SPLITPACKET));
+        else
+            total_sent += ret - (int)sizeof(SPLITPACKET);
+
+        // sleep a bit between sends if needed (optional)
+        // Platform_NanoSleep(100 * 1000);
+    }
+
+    return total_sent;
+}
+#endif
 
 /*
 ==================
