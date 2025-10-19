@@ -662,7 +662,7 @@ static qboolean RectFitsInDisplay( const SDL_Rect *rect, const SDL_Rect *display
 		&& rect->y >= display->y
 		&& rect->x + rect->w <= display->x + display->w
 		&& rect->y + rect->h <= display->y + display->h;
-}	
+}
 // Function to check if the rectangle fits in any display
 static qboolean RectFitsInAnyDisplay( const SDL_Rect *rect, const SDL_Rect *display_rects, int num_displays )
 {
