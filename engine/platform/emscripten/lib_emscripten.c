@@ -27,3 +27,10 @@ const char *EMSCRIPTEN_GetFuncName(void *hInstance, void *address)
         return 0;
     }, hInstance, address);
 }
+
+#include <errno.h>
+
+EMSCRIPTEN_KEEPALIVE
+int* getErrnoLocation(void) {
+    return __errno_location();
+}
