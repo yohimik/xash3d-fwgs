@@ -2124,6 +2124,10 @@ TODO: make this non-fatal
 */
 int FS_SetCurrentDirectory( const char *path )
 {
+// fix?
+#ifdef XASH_EMSCRIPTEN
+	return true;
+#endif
 #if XASH_WIN32
 	if( !SetCurrentDirectoryW( FS_PathToWideChar( path )))
 	{
