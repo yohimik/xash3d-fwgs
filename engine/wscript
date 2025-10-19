@@ -313,7 +313,7 @@ def build(bld):
 						  '--js-library=../engine/platform/emscripten/net_emscripten.js',
 						  '-sINITIAL_MEMORY=256mb', '-sSTACK_SIZE=16mb', '-Oz', '--closure 1', '--minify-wasm-imports',
 						  '-sMAX_WEBGL_VERSION=2', '-sMIN_WEBGL_VERSION=2', '-sFULL_ES2', # works ok with gl2shim
-						  '-sEXPORTED_RUNTIME_METHODS=callMain,addRunDependency,removeRunDependency,FS',
+						  '-sEXPORTED_RUNTIME_METHODS=callMain,addRunDependency,removeRunDependency,FS,ccall',
 						  '-sMODULARIZE', '-sEXPORT_NAME=Xash3D']
 
 		f(source = source,
