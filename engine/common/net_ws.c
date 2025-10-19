@@ -1433,6 +1433,56 @@ qboolean NET_GetPacket( netsrc_t sock, netadr_t *from, byte *data, size_t *lengt
 	}
 }
 
+#if !XASH_EMSCRIPTEN && NET_USE_SEND_BATCH
+int sendto_batch(int sock,
+                 char *fragments[],
+                 int sizes[],
+                 int count,
+                 int flags,
+                 const struct sockaddr *to,
+                 int tolen)
+{
+    register int i;
+    register int total_sent = 0;
+    register int ret;
+
+    /* Fast sanity check */
+    if (sock < 0 || fragments == NULL || sizes == NULL ||
+        count <= 0 || to == NULL || tolen <= 0)
+    {
+        return -1;
+    }
+
+    /* Tight inner loop — relies on CPU branch prediction */
+    for (i = 0; i < count; ++i)
+    {
+        register char *frag = fragments[i];
+        register int len = sizes[i];
+
+        /* Skip invalid entries fast */
+        if (frag == NULL || len <= 0)
+            continue;
+
+        /* Direct call — avoid indirect function overhead */
+        ret = sendto(sock, frag, len, flags, to, tolen);
+        if (ret < 0)
+        {
+            /* Immediately stop on first error */
+            return ret;
+        }
+
+        /* Compute payload-only count; guard against undersized sends */
+        if (ret >= len)
+            total_sent += (len - (int)sizeof(SPLITPACKET));
+        else if (ret > (int)sizeof(SPLITPACKET))
+            total_sent += (ret - (int)sizeof(SPLITPACKET));
+        /* else: ignore if header-only was sent */
+    }
+
+    return total_sent;
+}
+#endif
+
 /*
 ==================
 NET_SendLong
@@ -1440,64 +1490,180 @@ NET_SendLong
 Fragment long packets, send short directly
 ==================
 */
-static int NET_SendLong( netsrc_t sock, int net_socket, const char *buf, size_t len, int flags, const struct sockaddr_storage *to, size_t tolen, size_t splitsize )
+static int NET_SendLong(
+    netsrc_t sock,
+    int net_socket,
+    const char *buf,
+    size_t len,
+    int flags,
+    const struct sockaddr_storage *to,
+    size_t tolen,
+    size_t splitsize)
 {
-#ifdef NET_USE_FRAGMENTS
-	// do we need to break this packet up?
-	if( splitsize > sizeof( SPLITPACKET ) && sock == NS_SERVER && len > splitsize )
-	{
-		char		packet[SPLITPACKET_MAX_SIZE];
-		int		total_sent, size, packet_count;
-		int		ret, packet_number;
-		int body_size = splitsize - sizeof( SPLITPACKET );
-		SPLITPACKET	*pPacket;
+    /* Early validation */
+    if (!buf || !to || len == 0)
+        return -1;
 
-		net.sequence_number++;
-		if( net.sequence_number <= 0 )
-			net.sequence_number = 1;
+    /* Fast path for short packets */
+    if (splitsize <= sizeof(SPLITPACKET) || sock != NS_SERVER || len <= splitsize)
+    {
+        if (len > (size_t)INT_MAX)
+            return -1;
+        return sendto(net_socket, buf, (int)len, flags,
+                      (const struct sockaddr *)to, (int)tolen);
+    }
 
-		pPacket = (SPLITPACKET *)packet;
-		pPacket->sequence_number = net.sequence_number;
-		pPacket->net_id = NET_HEADER_SPLITPACKET;
-		packet_number = 0;
-		total_sent = 0;
-		packet_count = (len + body_size - 1) / body_size;
+#ifndef NET_USE_FRAGMENTS
+    /* Fallback if fragments disabled */
+    if (len > (size_t)INT_MAX)
+        return -1;
+    return sendto(net_socket, buf, (int)len, flags,
+                  (const struct sockaddr *)to, (int)tolen);
+#else /* NET_USE_FRAGMENTS defined */
 
-		while( len > 0 )
-		{
-			size = Q_min( body_size, len );
-			pPacket->packet_id = (packet_number << 8) + packet_count;
-			memcpy( packet + sizeof( SPLITPACKET ), buf + ( packet_number * body_size ), size );
+    const size_t hdr_size = sizeof(SPLITPACKET);
+    int body_size;
+    size_t packet_count;
+    SPLITPACKET base_hdr;
 
-			if( net_showpackets.value == 3.0f )
-			{
-				netadr_t	adr;
+    body_size = (int)(splitsize - hdr_size);
+    if (body_size <= 0)
+        return -1;
 
-				memset( &adr, 0, sizeof( adr ));
-				NET_SockadrToNetadr( to, &adr );
+    packet_count = (len + (size_t)body_size - 1u) / (size_t)body_size;
+    if (packet_count == 0 || packet_count > 8192u)
+        return -1;
 
-				Con_Printf( "Sending split %i of %i with %i bytes and seq %i to %s\n",
-					packet_number + 1, packet_count, size, net.sequence_number, NET_AdrToString( adr ));
-			}
+    base_hdr.sequence_number = ++net.sequence_number;
+    if (base_hdr.sequence_number <= 0)
+        base_hdr.sequence_number = 1;
+    base_hdr.net_id = NET_HEADER_SPLITPACKET;
 
-			ret = sendto( net_socket, packet, size + sizeof( SPLITPACKET ), flags, (const struct sockaddr *)to, tolen );
-			if( ret < 0 ) return ret; // error
+#ifdef NET_USE_SEND_BATCH
+    {
+        /* ---- BATCH MODE ---- */
+        size_t meta_size;
+        size_t per_packet_size;
+        size_t data_size;
+        size_t total_alloc;
+        char *mem;
+        char **fragments;
+        int *sizes;
+        char *packet_data;
+        const char *src;
+        char *dst;
+        size_t remain;
+        size_t i;
+        int ret;
+        int total_sent;
 
-			if( ret >= size )
-				total_sent += size;
-			len -= size;
-			packet_number++;
-			Platform_NanoSleep( 100 * 1000 );
-		}
+        meta_size = packet_count * (sizeof(char *) + sizeof(int));
+        per_packet_size = hdr_size + (size_t)body_size;
+        data_size = packet_count * per_packet_size;
+        total_alloc = meta_size + data_size;
 
-		return total_sent;
-	}
-	else
+#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
+        if (posix_memalign((void **)&mem, 64, total_alloc) != 0)
+            return -1;
+#else
+        mem = (char *)malloc(total_alloc);
+        if (!mem)
+            return -1;
 #endif
-	{
-		// no fragmenantion for client connection
-		return sendto( net_socket, buf, len, flags, (const struct sockaddr *)to, tolen );
-	}
+
+        fragments = (char **)mem;
+        sizes = (int *)(mem + packet_count * sizeof(char *));
+        packet_data = mem + meta_size;
+        src = buf;
+        dst = packet_data;
+        remain = len;
+
+        for (i = 0; i < packet_count; ++i)
+        {
+            int chunk;
+            SPLITPACKET *hdr;
+
+            chunk = (remain < (size_t)body_size) ? (int)remain : body_size;
+
+            hdr = (SPLITPACKET *)dst;
+            memcpy(hdr, &base_hdr, hdr_size);
+            hdr->packet_id = ((int)i << 8) + (int)packet_count;
+
+            memcpy(dst + hdr_size, src, (size_t)chunk);
+
+            fragments[i] = dst;
+            sizes[i] = chunk + (int)hdr_size;
+
+            src += (size_t)chunk;
+            dst += per_packet_size;
+            remain -= (size_t)chunk;
+        }
+
+        ret = sendto_batch(net_socket, fragments, sizes,
+                           (int)packet_count, flags,
+                           (const struct sockaddr_storage *)to, (int)tolen);
+
+        if (ret >= 0)
+        {
+            total_sent = ret - (int)packet_count * (int)hdr_size;
+            if (total_sent < 0)
+                total_sent = 0;
+        }
+        else
+        {
+            total_sent = ret;
+        }
+
+        free(mem);
+        return (ret < 0) ? ret : total_sent;
+    }
+#else /* no NET_USE_SEND_BATCH */
+    {
+        /* ---- NON-BATCH MODE ---- */
+        const char *src;
+        size_t remain;
+        int total_sent;
+        int i;
+        char packet[SPLITPACKET_MAX_SIZE];
+        SPLITPACKET *hdr;
+        int chunk;
+        int ret;
+
+        if ((int)(hdr_size + (size_t)body_size) > SPLITPACKET_MAX_SIZE)
+            return -1;
+
+        total_sent = 0;
+        src = buf;
+        remain = len;
+
+        for (i = 0; i < (int)packet_count; ++i)
+        {
+            chunk = (remain < (size_t)body_size) ? (int)remain : body_size;
+
+            hdr = (SPLITPACKET *)packet;
+            memcpy(hdr, &base_hdr, hdr_size);
+            hdr->packet_id = (i << 8) + (int)packet_count;
+
+            memcpy(packet + hdr_size, src, (size_t)chunk);
+
+            ret = sendto(net_socket, packet, chunk + (int)hdr_size,
+                         flags, (const struct sockaddr *)to, (int)tolen);
+            if (ret < 0)
+                return ret;
+
+            total_sent += chunk;
+            src += (size_t)chunk;
+            remain -= (size_t)chunk;
+        }
+
+        return total_sent;
+    }
+#endif /* NET_USE_SEND_BATCH */
+
+#endif /* NET_USE_FRAGMENTS */
+
+    /* Defensive fallback */
+    return -1;
 }
 
 /*

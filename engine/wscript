@@ -308,6 +308,7 @@ def build(bld):
 		linkflags = []
 
 		if bld.env.DEST_OS == 'emscripten':
+			defines += ['NET_USE_SEND_BATCH']
 			linkflags = [ '-sENVIRONMENT=web', '-sAUTO_JS_LIBRARIES=0',
 						  '-lidbfs.js', '-lwebgl.js', '-lopenal.js', '-lasync.js', '-sNO_POLYFILL',
 						  '--js-library=../engine/platform/emscripten/net_emscripten.js',
