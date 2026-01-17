@@ -147,7 +147,7 @@ def configure(conf):
 
 	if not conf.env.DEST_OS in ['win32', 'android']:
 		conf.check_pthreads(mode='c')
-	
+
 	if conf.env.IOS:
 		for i in frameworks :
 			conf.check(features='c cprogram', framework=i, uselib_store=i, msg='Checking for %s framework' % i)
@@ -219,7 +219,7 @@ def build(bld):
 		source += bld.path.ant_glob('platform/ios/*.c')
 		source += bld.path.ant_glob('platform/ios/*.m')
 		includes += bld.path.ant_glob('platform/ios')
-	
+
 	# include sources for optional features
 	if bld.get_define('XASH_CUSTOM_SWAP'):
 		source += ['platform/misc/kmalloc.c', 'platform/misc/sbrk.c']
@@ -308,13 +308,14 @@ def build(bld):
 		linkflags = []
 
 		if bld.env.DEST_OS == 'emscripten':
+			defines += ['NET_USE_SEND_BATCH']
 			linkflags = [ '-sENVIRONMENT=web', '-sAUTO_JS_LIBRARIES=0',
 						  '-lidbfs.js', '-lwebgl.js', '-lopenal.js', '-lasync.js', '-sNO_POLYFILL',
 						  '--js-library=../engine/platform/emscripten/net_emscripten.js',
-						  '-sINITIAL_MEMORY=512mb', '-sSTACK_SIZE=32mb', '-sALLOW_MEMORY_GROWTH=1',
+						  '-sINITIAL_MEMORY=256mb', '-sSTACK_SIZE=16mb', '-Oz', '--closure 1', '--minify-wasm-imports',
 						  '-sMAX_WEBGL_VERSION=2', '-sMIN_WEBGL_VERSION=2', '-sFULL_ES2', # works ok with gl2shim
-						  '-sEXPORT_ALL', '-sEXPORTED_RUNTIME_METHODS=callMain,addRunDependency,removeRunDependency',
-						  '-sMODULARIZE']
+						  '-sEXPORTED_RUNTIME_METHODS=callMain,addRunDependency,removeRunDependency,FS,ccall',
+						  '-sMODULARIZE', '-sEXPORT_NAME=Xash3D',]
 
 		f(source = source,
 			target = 'xash',

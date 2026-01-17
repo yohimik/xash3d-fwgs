@@ -24,6 +24,7 @@ GNU General Public License for more details.
 
 #define recvfrom emscripten_net_recvfrom
 #define sendto emscripten_net_sendto
+#define sendto_batch emscripten_net_sendto_batch
 #define socket emscripten_net_socket
 #define ioctlsocket(...) 0
 #define setsockopt(...) 0
@@ -39,6 +40,7 @@ GNU General Public License for more details.
 
 extern int emscripten_net_recvfrom( int, void *__restrict, size_t, int, struct sockaddr *__restrict, int *__restrict );
 extern int emscripten_net_sendto ( int, const void *, size_t, int, const struct sockaddr *, int );
+extern int emscripten_net_sendto_batch ( int, char *packets[], int sizes[], int, int, const struct sockaddr_storage *to, int );
 extern int emscripten_net_socket( int, int, int );
 extern struct hostent *emscripten_net_gethostbyname( const char * );
 extern int emscripten_net_gethostname( char *, size_t );

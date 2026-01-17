@@ -54,10 +54,6 @@ GNU General Public License for more details.
 #include <emscripten.h>
 #endif
 
-#if XASH_EMSCRIPTEN
-#include <emscripten.h>
-#endif
-
 #define FILE_COPY_SIZE		(1024 * 1024)
 #define SAVE_AGED_COUNT 2 // the default count of quick and auto saves
 

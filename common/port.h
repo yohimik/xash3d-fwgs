@@ -38,9 +38,6 @@ GNU General Public License for more details.
 		#define OS_LIB_EXT    "so"
 	#endif
 	#define OPEN_COMMAND  "xdg-open"
-	#if XASH_EMSCRIPTEN
-		#define OS_LIB_EXT "wasm"
-	#endif
 #elif XASH_WIN32
 	#define HSPRITE WINAPI_HSPRITE
 	#define WIN32_LEAN_AND_MEAN
