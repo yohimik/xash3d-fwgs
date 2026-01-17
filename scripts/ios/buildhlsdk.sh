@@ -17,11 +17,14 @@ IOSDIR=$(realpath ../../build/ios)
 cd $MODPATH
 
 #compiling hlsdk for ios release is broken, so just build for debug
-cmake -DCMAKE_SYSTEM_NAME=iOS -DGAMEDIR=$IOSDIR -DCMAKE_BUILD_TYPE=Debug -B build -S .
+cmake -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 -DGAMEDIR=$IOSDIR -DCMAKE_BUILD_TYPE=Debug -B build -S .
 cmake --build build --target install
 
 cd ../../
+./createipa.sh
+
 if [ -d mod-build ]; then
     rm -rf mod-build/
 fi
+
 exit 0

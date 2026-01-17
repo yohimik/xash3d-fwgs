@@ -129,11 +129,12 @@ typedef struct world_static_s
 } world_static_t;
 
 #ifndef REF_DLL
-extern world_static_t	world;
-extern poolhandle_t     com_studiocache;
-extern convar_t		mod_studiocache;
-extern convar_t		r_wadtextures;
-extern convar_t		r_showhull;
+extern world_static_t world;
+extern poolhandle_t   com_studiocache;
+extern convar_t       mod_studiocache;
+extern convar_t       r_wadtextures;
+extern convar_t       r_showhull;
+extern convar_t       r_allow_wad3_luma;
 extern const mclipnode16_t box_clipnodes16[6];
 extern const mclipnode32_t box_clipnodes32[6];
 
@@ -166,8 +167,8 @@ void Mod_LoadAliasModel( model_t *mod, const void *buffer, qboolean *loaded );
 //
 // mod_bmodel.c
 //
-void Mod_LoadBrushModel( model_t *mod, const void *buffer, qboolean *loaded );
-qboolean Mod_TestBmodelLumps( file_t *f, const char *name, const byte *mod_base, qboolean silent, dlump_t *entities );
+void Mod_LoadBrushModel( model_t *mod, void *buffer, size_t buffersize, qboolean *loaded );
+qboolean Mod_TestBmodelLumps( file_t *f, const char *name, byte *mod_base, size_t buffersize, qboolean silent, dlump_t *entities );
 int Mod_FatPVS( const vec3_t org, float radius, byte *visbuffer, int visbytes, qboolean merge, qboolean fullvis, qboolean phs );
 qboolean Mod_BoxVisible( const vec3_t mins, const vec3_t maxs, const byte *visbits );
 int Mod_CheckLump( const char *filename, const int lump, int *lumpsize );

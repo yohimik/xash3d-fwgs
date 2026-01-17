@@ -157,13 +157,6 @@ static qboolean CL_EntityCustomLerp( cl_entity_t *e )
 	case MOVETYPE_FLY:
 	case MOVETYPE_COMPOUND:
 		return false;
-
-	// ABSOLUTELY STUPID HACK TO ALLOW MONSTERS
-	// INTERPOLATION IN GRAVGUNMOD COOP
-	// MUST BE REMOVED ONCE WE REMOVE 48 PROTO SUPPORT
-	case MOVETYPE_TOSS:
-		if( cls.legacymode == PROTO_LEGACY && e->model && e->model->type == mod_studio )
-			return false;
 	}
 
 	return true;
@@ -317,6 +310,21 @@ static void CL_ProcessEntityUpdate( cl_entity_t *ent )
 
 	if( FBitSet( ent->curstate.entityType, ENTITY_NORMAL ))
 		COM_NormalizeAngles( ent->curstate.angles );
+
+	// a1ba: follow entities are sent with null origin, grab their aiment origin here
+	//
+	// null origin leads to triggered entity teleport check and subsequent reset of position history
+	// and empty position history doesn't allow entity to render correctly
+	//
+	// it's probably should be done somewhere else, as goldsrc doesn't do this here
+	// it has MoveAiments function but it's called after LinkPacketEntities :shrug:
+	if( ent->curstate.movetype == MOVETYPE_FOLLOW && VectorIsNull( ent->curstate.origin ) && ent->curstate.aiment )
+	{
+		cl_entity_t *aiment = CL_GetEntityByIndex( ent->curstate.aiment );
+
+		if( aiment )
+			VectorCopy( aiment->origin, ent->curstate.origin );
+	}
 
 	parametric = ent->curstate.starttime != 0.0f && ent->curstate.impacttime != 0.0f;
 
@@ -653,18 +661,9 @@ FRAME PARSING
 */
 static qboolean CL_ParseEntityNumFromPacket( sizebuf_t *msg, int *newnum, connprotocol_t proto )
 {
-	if( proto == PROTO_LEGACY )
-	{
-		*newnum = MSG_ReadWord( msg );
-		if( *newnum == 0 )
-			return false;
-	}
-	else
-	{
-		*newnum = MSG_ReadUBitLong( msg, MAX_ENTITY_BITS );
-		if( *newnum == LAST_EDICT )
-			return false;
-	}
+	*newnum = MSG_ReadUBitLong( msg, MAX_ENTITY_BITS );
+	if( *newnum == LAST_EDICT )
+		return false;
 
 	return true;
 }
@@ -831,9 +830,7 @@ int CL_ParsePacketEntities( sizebuf_t *msg, qboolean delta, connprotocol_t proto
 		CL_WriteDemoJumpTime();
 
 	// sentinel count. save it for debug checking
-	if( proto == PROTO_LEGACY )
-		count = MSG_ReadWord( msg );
-	else count = MSG_ReadUBitLong( msg, MAX_VISIBLE_PACKET_BITS ) + 1;
+	count = MSG_ReadUBitLong( msg, MAX_VISIBLE_PACKET_BITS ) + 1;
 
 	newframe = &cl.frames[cl.parsecountmod];
 
@@ -1246,16 +1243,6 @@ static void CL_LinkPacketEntities( frame_t *frame )
 				if( !CL_InterpolateModel( ent ))
 					continue;
 			}
-#if 0
-			// ABSOLUTELY STUPID HACK TO ALLOW MONSTERS
-			// INTERPOLATION IN GRAVGUNMOD COOP
-			// MUST BE REMOVED ONCE WE REMOVE 48 PROTO SUPPORT
-			else if( cls.legacymode == PROTO_LEGACY && ent->model->type == mod_studio && ent->curstate.movetype == MOVETYPE_TOSS )
-			{
-				if( !CL_InterpolateModel( ent ))
-					continue;
-			}
-#endif
 			else
 			{
 				// no interpolation right now

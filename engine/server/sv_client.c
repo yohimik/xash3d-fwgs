@@ -38,15 +38,13 @@ SV_GetPlayerCount
 */
 void SV_GetPlayerCount( int *players, int *bots )
 {
-	int i;
-
 	*players = 0;
 	*bots = 0;
 
 	if( !svs.clients )
 		return;
 
-	for( i = 0; i < svs.maxclients; i++ )
+	for( int i = 0; i < svs.maxclients; i++ )
 	{
 		if( svs.clients[i].state >= cs_connected )
 		{
@@ -55,7 +53,6 @@ void SV_GetPlayerCount( int *players, int *bots )
 			else
 				(*players)++;
 		}
-
 	}
 }
 
@@ -108,7 +105,7 @@ static int SV_GetChallenge( netadr_t from, qboolean *error )
 	return digest[0] | digest[1] << 8 | digest[2] << 16 | digest[3] << 24;
 }
 
-static void SV_SendChallenge( netadr_t from )
+static void SV_SendChallenge( netadr_t from, qboolean skip_bandwidth_test )
 {
 	qboolean error = false;
 	int challenge = SV_GetChallenge( from, &error );
@@ -117,7 +114,7 @@ static void SV_SendChallenge( netadr_t from )
 		return;
 
 	// send it back
-	Netchan_OutOfBandPrint( NS_SERVER, from, S2C_CHALLENGE" %i", challenge );
+	Netchan_OutOfBandPrint( NS_SERVER, from, S2C_CHALLENGE" %i %i", challenge, skip_bandwidth_test ? 0 : 1 );
 }
 
 static int SV_GetFragmentSize( void *pcl, fragsize_t mode )
@@ -443,7 +440,7 @@ static void SV_ConnectClient( netadr_t from )
 
 	newcl->upstate = us_inactive;
 	newcl->connection_started = host.realtime;
-	newcl->cl_updaterate = 0.05;	// 20 fps as default
+	newcl->next_messageinterval = 0.05; // 20 fps as default
 	newcl->delta_sequence = -1;
 
 	// parse some info from the info strings (this can override cl_updaterate)
@@ -451,7 +448,7 @@ static void SV_ConnectClient( netadr_t from )
 
 	SV_UserinfoChanged( newcl );
 
-	newcl->next_messagetime = host.realtime + newcl->cl_updaterate;
+	newcl->next_messagetime = host.realtime + sv.frametime + newcl->next_messageinterval;
 
 	// reset stats
 	newcl->next_checkpingtime = -1.0;
@@ -804,13 +801,22 @@ static void SV_TestBandWidth( netadr_t from )
 		return;
 	}
 
-	// quickly reject invalid packets
-	if( !sv_allow_testpacket.value || !svs.testpacket_buf ||
-		( packetsize <= FRAGMENT_MIN_SIZE ) ||
-		( packetsize > FRAGMENT_MAX_SIZE ))
+	// third argument is the challenge, if it's empty, it means this is an
+	// old client that do not have challenge and testbandwidth swapped
+	if( !Q_strlen( Cmd_Argv( 3 )))
 	{
-		// skip the test and just get challenge
-		SV_SendChallenge( from );
+		SV_SendChallenge( from, true );
+		return;
+	}
+
+	// require challenge for testpacket
+	if( !SV_CheckChallenge( from, Q_atoi( Cmd_Argv( 3 ))))
+		return;
+
+	// quickly reject invalid packets
+	if( !sv_allow_testpacket.value || !svs.testpacket_buf || packetsize <= FRAGMENT_MIN_SIZE || packetsize > 1400 )
+	{
+		SV_SendChallenge( from, true );
 		return;
 	}
 
@@ -818,7 +824,7 @@ static void SV_TestBandWidth( netadr_t from )
 	ofs = packetsize - svs.testpacket_filepos - 1;
 	if(( ofs < 0 ) || ( ofs > svs.testpacket_filelen ))
 	{
-		SV_SendChallenge( from );
+		SV_SendChallenge( from, true );
 		return;
 	}
 
@@ -1765,6 +1771,40 @@ static qboolean SV_ShouldUpdateUserinfo( sv_client_t *cl )
 	return allow;
 }
 
+static double SV_CheckUpdateRate( double rate )
+{
+	if( sv_maxupdaterate.value )
+	{
+		if( rate < 1.0f / sv_maxupdaterate.value )
+			return 1.0f / sv_maxupdaterate.value;
+	}
+
+	if( sv_minupdaterate.value )
+	{
+		if( rate > 1.0f / sv_minupdaterate.value )
+			return 1.0f / sv_minupdaterate.value;
+	}
+
+	return rate;
+}
+
+static double SV_CheckRate( double rate )
+{
+	if( sv_maxrate.value )
+	{
+		if( rate > sv_maxrate.value )
+			return rate;
+	}
+
+	if( sv_minrate.value )
+	{
+		if( rate < sv_minrate.value )
+			return rate;
+	}
+
+	return rate;
+}
+
 /*
 =================
 SV_UserinfoChanged
@@ -1780,6 +1820,7 @@ static void SV_UserinfoChanged( sv_client_t *cl )
 	string		name1, name2;
 	sv_client_t	*current;
 	const char		*val;
+	int ival;
 
 	if( !COM_CheckString( cl->userinfo ))
 		return;
@@ -1843,9 +1884,10 @@ static void SV_UserinfoChanged( sv_client_t *cl )
 
 	// rate command
 	val = Info_ValueForKey( cl->userinfo, "rate" );
-	if( COM_CheckString( val ) )
-		cl->netchan.rate = bound( sv_minrate.value, Q_atoi( val ), sv_maxrate.value );
-	else cl->netchan.rate = DEFAULT_RATE;
+	cl->netchan.rate = Q_atoi( Info_ValueForKey( cl->userinfo, "rate" ));
+	if( cl->netchan.rate <= 0 )
+		cl->netchan.rate = DEFAULT_RATE;
+	cl->netchan.rate = bound( MIN_RATE, cl->netchan.rate, MAX_RATE );
 
 	// movement prediction
 	if( Q_atoi( Info_ValueForKey( cl->userinfo, "cl_nopred" )))
@@ -1862,13 +1904,13 @@ static void SV_UserinfoChanged( sv_client_t *cl )
 		SetBits( cl->flags, FCL_LOCAL_WEAPONS );
 	else ClearBits( cl->flags, FCL_LOCAL_WEAPONS );
 
-	val = Info_ValueForKey( cl->userinfo, "cl_updaterate" );
+	ival = Q_atoi( Info_ValueForKey( cl->userinfo, "cl_updaterate" ));
 
-	if( COM_CheckString( val ))
-	{
-		float rate = Q_atoi( val );
-		cl->cl_updaterate = 1.0 / bound( sv_minupdaterate.value, rate, sv_maxupdaterate.value );
-	}
+	if( ival <= 0 )
+		ival = 20; // 20 fps as default
+
+	cl->next_messageinterval = SV_CheckUpdateRate( 1.0 / ival );
+	cl->netchan.rate = SV_CheckRate( cl->netchan.rate );
 
 	// call prog code to allow overrides
 	svgame.dllFuncs.pfnClientUserInfoChanged( cl->edict, cl->userinfo );
@@ -3207,7 +3249,7 @@ void SV_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 	}
 	else if( !Q_strcmp( pcmd, C2S_GETCHALLENGE ))
 	{
-		SV_SendChallenge( from );
+		SV_SendChallenge( from, !sv_allow_testpacket.value || !svs.testpacket_buf );
 	}
 	else if( !Q_strcmp( pcmd, C2S_CONNECT ))
 	{
@@ -3593,7 +3635,7 @@ void SV_ExecuteClientMessage( sv_client_t *cl, sizebuf_t *msg )
 	frame = &cl->frames[cl->netchan.incoming_acknowledged & SV_UPDATE_MASK];
 
 	// ping time doesn't factor in message interval, either
-	frame->ping_time = host.realtime - frame->senttime - cl->cl_updaterate;
+	frame->ping_time = host.realtime - frame->senttime - cl->next_messageinterval;
 
 	// on first frame ( no senttime ) don't skew ping
 	if( frame->senttime == 0.0f ) frame->ping_time = 0.0f;
@@ -3654,7 +3696,7 @@ void SV_ExecuteClientMessage( sv_client_t *cl, sizebuf_t *msg )
 			SV_ParseCvarValue2( cl, msg );
 			break;
 		default:
-			Con_DPrintf( S_ERROR "%s: clc_bad\n", cl->name );
+			Con_DPrintf( S_ERROR "%s: clc_bad (%d)\n", cl->name, c );
 			SV_DropClient( cl, false );
 			return;
 		}

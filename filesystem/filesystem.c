@@ -48,6 +48,11 @@ GNU General Public License for more details.
 #include "xash3d_mathlib.h"
 #include "common/com_strings.h"
 #include "common/protocol.h"
+#include "library_suffix.h"
+
+#if XASH_EMSCRIPTEN
+#include <emscripten.h>
+#endif
 
 #if XASH_EMSCRIPTEN
 #include <emscripten.h>
@@ -761,8 +766,8 @@ static void FS_InitGameInfo( gameinfo_t *GameInfo, const char *gamedir, qboolean
 	else
 	{
 		Q_strncpy( GameInfo->basedir, fs_basedir, sizeof( GameInfo->basedir ));
-		Q_strncpy( GameInfo->title, "New Game", sizeof( GameInfo->title ));
-		Q_strncpy( GameInfo->startmap, "newmap", sizeof( GameInfo->startmap ));
+		Q_strncpy( GameInfo->title, gamedir, sizeof( GameInfo->title ));
+		Q_strncpy( GameInfo->startmap, "c0a0", sizeof( GameInfo->startmap ));
 		Q_strncpy( GameInfo->dll_path, "cl_dlls", sizeof( GameInfo->dll_path ));
 		Q_strncpy( GameInfo->game_dll, "dlls/hl.dll", sizeof( GameInfo->game_dll ));
 		Q_strncpy( GameInfo->game_dll_linux, "dlls/hl.so", sizeof( GameInfo->game_dll_linux ));
@@ -1469,7 +1474,7 @@ static qboolean FS_CheckForCrypt( const char *dllname )
 	FS_Read( f, &key, sizeof( key ));
 	FS_Close( f );
 
-	return ( key == 0x12345678 ) ? true : false;
+	return ( key == LittleLong( 0x12345678 )) ? true : false;
 }
 
 static int FS_StripIdiotRelativePath( const char *dllname, const char *gamefolder )

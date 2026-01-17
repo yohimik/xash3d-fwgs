@@ -106,16 +106,19 @@ void SDLash_Init( const char *basedir )
 	else
 		SDL_LogSetAllPriority( SDL_LOG_PRIORITY_ERROR );
 
-#ifndef SDL_INIT_EVENTS
-#define SDL_INIT_EVENTS 0
-#endif
+#if XASH_WIN32
+	SDL_SetHint( SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitor" );
+	// TODO: disabled for now
+	// try to test it better when we'll come back to highdpi support issue
+	// SDL_SetHint( SDL_HINT_WINDOWS_DPI_SCALING, "1" );
+#endif // XASH_WIN32
+
 	if( SDL_Init( SDL_INIT_TIMER | SDL_INIT_VIDEO | SDL_INIT_EVENTS ) )
 	{
 		Sys_Warn( "SDL_Init failed: %s", SDL_GetError() );
 		host.type = HOST_DEDICATED;
 	}
 
-#if SDL_MAJOR_VERSION >= 2
 	SDL_SetHint( SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0" );
 
 #ifdef SDL_HINT_MOUSE_TOUCH_EVENTS
@@ -123,8 +126,15 @@ void SDLash_Init( const char *basedir )
 #endif // SDL_HINT_MOUSE_TOUCH_EVENTS
 	SDL_SetHint( SDL_HINT_TOUCH_MOUSE_EVENTS, "0" );
 
+	// NOTE: setting this hint makes no sense, as of course
+	// it doesn't make warps magically work in normal, non-relative mode
+	// there is pointer_warp_v1 extension but it's only implemented in SDL3
+	// at the time of writing, so there it should just work if compositor
+	// supports it
+
+	// SDL_SetHint( SDL_HINT_VIDEO_WAYLAND_EMULATE_MOUSE_WARP, "1" );
+
 	SDL_StopTextInput();
-#endif // XASH_SDL == 2
 
 	SDLash_InitCursors();
 }

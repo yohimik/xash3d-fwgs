@@ -21,6 +21,10 @@ GNU General Public License for more details.
 #include "server.h" // !!svgame.hInstance
 #include "vid_common.h"
 
+#if XASH_EMSCRIPTEN
+#include <emscripten.h>
+#endif
+
 static void 	UI_UpdateUserinfo( void );
 
 gameui_static_t	gameui;
@@ -36,6 +40,9 @@ static void UI_ToggleAllowConsole_f( void )
 void UI_UpdateMenu( float realtime )
 {
 	if( !gameui.hInstance ) return;
+
+	// don't draw menu over console
+	if( cls.key_dest == key_console ) return;
 
 	// if some deferred cmds is waiting
 	if( UI_IsVisible() && COM_CheckString( host.deferred_cmd ))
@@ -97,6 +104,9 @@ void UI_SetActiveMenu( qboolean fActive )
 
 void UI_AddServerToList( netadr_t adr, const char *info )
 {
+#if XASH_EMSCRIPTEN
+	EM_ASM({ Module.callbacks?.serverInfo?.($0, UTF8ToString($1)) }, adr.ip4, info);
+#endif
 	if( !gameui.hInstance ) return;
 	gameui.dllFuncs.pfnAddServerToList( adr, info );
 }
@@ -995,7 +1005,7 @@ pfnGetFilesList
 release prev search on a next call
 =========
 */
-static char ** GAME_EXPORT pfnGetFilesList( const char *pattern, int *numFiles, int gamedironly )
+char **GAME_EXPORT CL_GetFilesList( const char *pattern, int *numFiles, int gamedironly )
 {
 	static search_t	*t = NULL;
 
@@ -1235,7 +1245,7 @@ static const ui_enginefuncs_t gEngfuncs =
 	pfnMemFree,
 	pfnGetOldGameInfo,
 	pfnGetGamesList,
-	pfnGetFilesList,
+	CL_GetFilesList,
 	SV_GetSaveComment,
 	CL_GetDemoComment,
 	pfnCheckGameDll,
