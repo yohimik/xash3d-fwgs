@@ -37,6 +37,9 @@ void UI_UpdateMenu( float realtime )
 {
 	if( !gameui.hInstance ) return;
 
+	// don't draw menu over console
+	if( cls.key_dest == key_console ) return;
+
 	// if some deferred cmds is waiting
 	if( UI_IsVisible() && COM_CheckString( host.deferred_cmd ))
 	{
@@ -995,7 +998,7 @@ pfnGetFilesList
 release prev search on a next call
 =========
 */
-static char ** GAME_EXPORT pfnGetFilesList( const char *pattern, int *numFiles, int gamedironly )
+char **GAME_EXPORT CL_GetFilesList( const char *pattern, int *numFiles, int gamedironly )
 {
 	static search_t	*t = NULL;
 
@@ -1235,7 +1238,7 @@ static const ui_enginefuncs_t gEngfuncs =
 	pfnMemFree,
 	pfnGetOldGameInfo,
 	pfnGetGamesList,
-	pfnGetFilesList,
+	CL_GetFilesList,
 	SV_GetSaveComment,
 	CL_GetDemoComment,
 	pfnCheckGameDll,

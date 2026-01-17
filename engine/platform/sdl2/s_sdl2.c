@@ -15,8 +15,6 @@ GNU General Public License for more details.
 
 #include "common.h"
 #include "platform.h"
-#if XASH_SOUND == SOUND_SDL
-
 #include "sound.h"
 #include "voice.h"
 
@@ -218,15 +216,10 @@ void SNDDMA_Shutdown( void )
 	{
 		SNDDMA_Activate( false );
 
-#if !XASH_EMSCRIPTEN
 		SDL_CloseAudioDevice( sdl_dev );
-#endif
 	}
 
-#if !XASH_EMSCRIPTEN
-	if( SDL_WasInit( SDL_INIT_AUDIO ))
-		SDL_QuitSubSystem( SDL_INIT_AUDIO );
-#endif
+	SDL_QuitSubSystem( SDL_INIT_AUDIO );
 
 	if( dma.buffer )
 	{
@@ -344,5 +337,3 @@ void VoiceCapture_Shutdown( void )
 	SDL_CloseAudioDevice( in_dev );
 	in_dev = 0;
 }
-
-#endif // XASH_SOUND == SOUND_SDL

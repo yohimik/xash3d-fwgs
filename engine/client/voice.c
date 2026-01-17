@@ -430,7 +430,7 @@ static uint Voice_GetOpusCompressedData( byte *out, uint maxsize, uint *frames )
 	if( voice.input_file )
 	{
 		uint   numbytes;
-		double updateInterval, curtime = Sys_DoubleTime();
+		double updateInterval, curtime = Platform_DoubleTime();
 
 		updateInterval = curtime - voice.start_time;
 		voice.start_time = curtime;
@@ -505,7 +505,7 @@ static uint Voice_GetGSCompressedData( byte *out, uint maxsize, uint *frames )
 	if( voice.input_file )
 	{
 		uint   numbytes;
-		double updateInterval, curtime = Sys_DoubleTime();
+		double updateInterval, curtime = Platform_DoubleTime();
 
 		updateInterval = curtime - voice.start_time;
 		voice.start_time = curtime;
@@ -553,7 +553,8 @@ static uint Voice_GetGSCompressedData( byte *out, uint maxsize, uint *frames )
 		if( bytes > 0 )
 		{
 			*(uint16_t *)( out + size ) = LittleShort( bytes );
-			*(uint16_t *)( out + size + 2 ) = LittleShort( sequence++ );
+			*(uint16_t *)( out + size + 2 ) = LittleShort( sequence );
+			sequence++;
 
 			size += bytes + sizeof( uint32_t );
 			maxsize -= bytes + sizeof( uint32_t );
@@ -593,8 +594,7 @@ static int Voice_ProcessGSData( int ent, const uint8_t *data, uint32_t size )
 	uint32_t    crc_in_packet;
 	uint32_t    crc;
 	size_t      offset;
-	int16_t     pcm[GS_MAX_DECOMPRESSED_SAMPLES];
-	size_t      output_samples;
+	size_t      samples;
 	uint16_t    sample_rate;
 	uint8_t     vpc_type;
 	uint16_t    data_len;
@@ -619,7 +619,7 @@ static int Voice_ProcessGSData( int ent, const uint8_t *data, uint32_t size )
 	}
 
 	offset = sizeof( uint64_t );
-	output_samples = 0;
+	samples = 0;
 
 	if( offset >= size - sizeof( uint32_t ) || data[offset] != GS_VPC_SETSAMPLERATE )
 	{
@@ -638,12 +638,6 @@ static int Voice_ProcessGSData( int ent, const uint8_t *data, uint32_t size )
 	data_len = LittleShort( *(uint16_t *)( data + offset ));
 	offset += sizeof( uint16_t );
 
-	if( offset + data_len > size - sizeof( uint32_t ))
-	{
-		Con_Printf( S_WARN "Voice packet data_len out of bounds\n" );
-		return 0;
-	}
-
 	if( vpc_type == GS_VPC_VDATA_OPUS_PLC )
 	{
 		decoder = voice.gs_decoders[ent - 1];
@@ -660,13 +654,13 @@ static int Voice_ProcessGSData( int ent, const uint8_t *data, uint32_t size )
 			// if frame size is 0, it means silence
 			if( frame_size == 0 )
 			{
-				if( output_samples + VOICE_DEFAULT_SILENCE_FRAME_SIZE > GS_MAX_DECOMPRESSED_SAMPLES )
+				if( samples + VOICE_DEFAULT_SILENCE_FRAME_SIZE > GS_MAX_DECOMPRESSED_SAMPLES )
 				{
 					Con_Printf( S_WARN "Voice buffer overflow\n" );
 					return 0;
 				}
-				memset( pcm + output_samples, 0, VOICE_DEFAULT_SILENCE_FRAME_SIZE * sizeof( int16_t ));
-				output_samples += VOICE_DEFAULT_SILENCE_FRAME_SIZE;
+				memset( ( (int16_t *)voice.decompress_buffer ) + samples, 0, VOICE_DEFAULT_SILENCE_FRAME_SIZE * sizeof( int16_t ));
+				samples += VOICE_DEFAULT_SILENCE_FRAME_SIZE;
 				continue;
 			}
 			if( frame_size == 0xFFFF )
@@ -680,13 +674,13 @@ static int Voice_ProcessGSData( int ent, const uint8_t *data, uint32_t size )
 				return 0;
 			}
 			decoded = opus_decode( decoder, data + offset + opus_offset, frame_size,
-					       pcm + output_samples, voice.frame_size, 0 );
+					       ( (int16_t *)voice.decompress_buffer ) + samples, voice.frame_size, 0 );
 			if( decoded < 0 )
 			{
 				Con_Printf( S_WARN "Opus decode error: %s\n", opus_strerror( decoded ));
 				return 0;
 			}
-			output_samples += decoded;
+			samples += decoded;
 			opus_offset += frame_size;
 		}
 	}
@@ -698,8 +692,8 @@ static int Voice_ProcessGSData( int ent, const uint8_t *data, uint32_t size )
 			Con_Printf( S_WARN "Silence data too large\n" );
 			return 0;
 		}
-		memset( pcm, 0, silence_samples * sizeof( int16_t ));
-		output_samples = silence_samples;
+		memset( voice.decompress_buffer, 0, silence_samples * sizeof( int16_t ));
+		samples = silence_samples;
 	}
 	else
 	{
@@ -707,10 +701,7 @@ static int Voice_ProcessGSData( int ent, const uint8_t *data, uint32_t size )
 		return 0;
 	}
 
-	if( output_samples > 0 )
-		Voice_StartChannel( output_samples, (byte *)pcm, ent );
-
-	return output_samples;
+	return samples;
 }
 
 /*
@@ -884,7 +875,7 @@ void Voice_RecordStart( void )
 			Sound_Process( &voice.input_file, voice.samplerate, voice.width, VOICE_PCM_CHANNELS, SOUND_RESAMPLE );
 			voice.input_file_pos = 0;
 
-			voice.start_time = Sys_DoubleTime();
+			voice.start_time = Platform_DoubleTime();
 			voice.is_recording = true;
 		}
 		else
@@ -927,8 +918,10 @@ void Voice_Disconnect( void )
 	VoiceCapture_Shutdown();
 	voice.device_opened = false;
 
-
-	Voice_ShutdownOpusDecoder();
+	if( voice.goldsrc )
+		Voice_ShutdownGoldSrcMode();
+	else
+		Voice_ShutdownOpusCustomMode();
 }
 
 /*
@@ -989,8 +982,7 @@ void Voice_AddIncomingData( int ent, const byte *data, uint size, uint frames )
 
 	if( voice.goldsrc )
 	{
-		// Voice_ProcessGSData handles Voice_StartChannel internally
-		Voice_ProcessGSData( ent, (const uint8_t *)data, size );
+		samples = Voice_ProcessGSData( ent, (const uint8_t *)data, size );
 	}
 	else
 	{
@@ -1021,10 +1013,10 @@ void Voice_AddIncomingData( int ent, const byte *data, uint size, uint frames )
 			ofs += compressed_size;
 			samples += frame_samples;
 		}
-
-		if( samples > 0 )
-			Voice_StartChannel( samples, voice.decompress_buffer, ent );
 	}
+
+	if( samples > 0 )
+		Voice_StartChannel( samples, voice.decompress_buffer, ent );
 }
 
 /*
@@ -1099,26 +1091,10 @@ Completely shutdown the voice subsystem
 */
 static void Voice_Shutdown( void )
 {
-	int i;
-
-	Voice_RecordStop();
-
-	if( voice.goldsrc )
-		Voice_ShutdownGoldSrcMode();
-	else
-		Voice_ShutdownOpusCustomMode();
-
-	VoiceCapture_Shutdown();
-
-	if( voice.local.talking_ack )
-		Voice_Status( VOICE_LOOPBACK_INDEX, false );
-
-	for( i = 1; i <= MAX_CLIENTS; i++ )
-		Voice_Status( i, false );
+	Voice_Disconnect();
 
 	voice.initialized = false;
 	voice.is_recording = false;
-	voice.device_opened = false;
 	voice.goldsrc = false;
 	voice.start_time = 0.0;
 	voice.samplerate = 0;

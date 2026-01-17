@@ -24,7 +24,7 @@ typedef struct autocomplete_list_s
 {
 	const char *name;
 	int arg; // argument number to handle
-	qboolean (*func)( const char *s, char *name, int length );
+	qboolean (*func)( const char *s, char *name, int length, qboolean print_suggestions );
 } autocomplete_list_t;
 
 typedef struct
@@ -53,9 +53,8 @@ Cmd_ListMaps
 
 =====================================
 */
-int Cmd_ListMaps( search_t *t, char *lastmapname, size_t len )
+int Cmd_ListMaps( search_t *t, char *lastmapname, size_t len, qboolean silent )
 {
-	byte   buf[MAX_SYSPATH]; // 1 kb
 	file_t *f;
 	int i, nummaps;
 	string mapname, message, compiler, generator;
@@ -78,24 +77,28 @@ int Cmd_ListMaps( search_t *t, char *lastmapname, size_t len )
 
 		if( f )
 		{
-			dheader_t *header;
-			dextrahdr_t	*hdrext;
-			dlump_t entities;
+			dheader_t   *header;
+			dextrahdr_t *hdrext;
+			dlump_t     entities;
+			fs_offset_t filelen;
+			byte        buf[MAX_SYSPATH] = { 0 }; // 1 kb
 
-			memset( buf, 0, sizeof( buf ));
-			FS_Read( f, buf, sizeof( buf ));
-			header = (dheader_t *)buf;
-			ver = header->version;
+			filelen = FS_Read( f, buf, sizeof( buf ));
 
 			// check all the lumps and some other errors
-			if( Mod_TestBmodelLumps( f, t->filenames[i], buf, true, &entities ))
+			if( !Mod_TestBmodelLumps( f, t->filenames[i], buf, filelen, silent, &entities ))
 			{
-				lumpofs = entities.fileofs;
-				lumplen = entities.filelen;
-				ver = header->version;
+				FS_Close( f );
+				continue;
 			}
 
+			lumpofs = entities.fileofs;
+			lumplen = entities.filelen;
+
+			header = (dheader_t *)buf;
 			hdrext = (dextrahdr_t *)((byte *)buf + sizeof( dheader_t ));
+
+			ver = header->version;
 			if( hdrext->id == IDEXTRAHEADER ) version = hdrext->version;
 
 			Q_strncpy( entfilename, t->filenames[i], sizeof( entfilename ));
@@ -165,7 +168,8 @@ int Cmd_ListMaps( search_t *t, char *lastmapname, size_t len )
 		default:	Q_strncpy( version_description, "??", sizeof( version_description )); break;
 		}
 
-		Con_Printf( "%16s (%s) ^3%s^7 ^2%s %s^7\n", mapname, version_description, message, compiler, generator );
+		if( !silent )
+			Con_Printf( "%16s (%s) ^3%s^7 ^2%s %s^7\n", mapname, version_description, message, compiler, generator );
 		nummaps++;
 	}
 
@@ -182,7 +186,7 @@ Cmd_GetMapList
 Prints or complete map filename
 =====================================
 */
-static qboolean Cmd_GetMapList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetMapList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	search_t *t;
 	string   matchbuf;
@@ -196,9 +200,10 @@ static qboolean Cmd_GetMapList( const char *s, char *completedname, int length )
 		Q_strncpy( completedname, matchbuf, length );
 	if( t->numfilenames == 1 ) return true;
 
-	nummaps = Cmd_ListMaps( t, matchbuf, sizeof( matchbuf ));
+	nummaps = Cmd_ListMaps( t, matchbuf, sizeof( matchbuf ), !print_suggestions );
 
-	Con_Printf( "\n^3 %d maps found.\n", nummaps );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %d maps found.\n", nummaps );
 
 	Mem_Free( t );
 
@@ -218,7 +223,7 @@ Cmd_GetDemoList
 Prints or complete demo filename
 =====================================
 */
-static qboolean Cmd_GetDemoList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetDemoList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	search_t		*t;
 	string		matchbuf;
@@ -239,11 +244,14 @@ static qboolean Cmd_GetDemoList( const char *s, char *completedname, int length 
 			continue;
 
 		COM_FileBase( t->filenames[i], matchbuf, sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 		numdems++;
 	}
 
-	Con_Printf( "\n^3 %i demos found.\n", numdems );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i demos found.\n", numdems );
 	Mem_Free( t );
 
 	// cut shortestMatch to the amount common with s
@@ -265,7 +273,7 @@ Cmd_GetMovieList
 Prints or complete movie filename
 =====================================
 */
-static qboolean Cmd_GetMovieList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetMovieList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	search_t		*t;
 	string		matchbuf;
@@ -285,11 +293,13 @@ static qboolean Cmd_GetMovieList( const char *s, char *completedname, int length
 			continue;
 
 		COM_FileBase( t->filenames[i], matchbuf, sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 		nummovies++;
 	}
 
-	Con_Printf( "\n^3 %i movies found.\n", nummovies );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i movies found.\n", nummovies );
 	Mem_Free( t );
 
 	// cut shortestMatch to the amount common with s
@@ -312,7 +322,7 @@ Cmd_GetMusicList
 Prints or complete background track filename
 =====================================
 */
-static qboolean Cmd_GetMusicList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetMusicList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	search_t		*t;
 	string		matchbuf;
@@ -334,11 +344,13 @@ static qboolean Cmd_GetMusicList( const char *s, char *completedname, int length
 			continue;
 
 		COM_FileBase( t->filenames[i], matchbuf, sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 		numtracks++;
 	}
 
-	Con_Printf( "\n^3 %i soundtracks found.\n", numtracks );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i soundtracks found.\n", numtracks );
 	Mem_Free(t);
 
 	// cut shortestMatch to the amount common with s
@@ -360,7 +372,7 @@ Cmd_GetSavesList
 Prints or complete savegame filename
 =====================================
 */
-static qboolean Cmd_GetSavesList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetSavesList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	search_t		*t;
 	string		matchbuf;
@@ -380,11 +392,13 @@ static qboolean Cmd_GetSavesList( const char *s, char *completedname, int length
 			continue;
 
 		COM_FileBase( t->filenames[i], matchbuf, sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 		numsaves++;
 	}
 
-	Con_Printf( "\n^3 %i saves found.\n", numsaves );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i saves found.\n", numsaves );
 	Mem_Free( t );
 
 	// cut shortestMatch to the amount common with s
@@ -407,7 +421,7 @@ Cmd_GetConfigList
 Prints or complete .cfg filename
 =====================================
 */
-static qboolean Cmd_GetConfigList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetConfigList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	search_t		*t;
 	string		matchbuf;
@@ -427,11 +441,13 @@ static qboolean Cmd_GetConfigList( const char *s, char *completedname, int lengt
 			continue;
 
 		COM_FileBase( t->filenames[i], matchbuf, sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 		numconfigs++;
 	}
 
-	Con_Printf( "\n^3 %i configs found.\n", numconfigs );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i configs found.\n", numconfigs );
 	Mem_Free( t );
 
 	// cut shortestMatch to the amount common with s
@@ -454,7 +470,7 @@ Cmd_GetSoundList
 Prints or complete sound filename
 =====================================
 */
-static qboolean Cmd_GetSoundList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetSoundList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	search_t		*t;
 	string		matchbuf;
@@ -478,11 +494,13 @@ static qboolean Cmd_GetSoundList( const char *s, char *completedname, int length
 
 		Q_strncpy( matchbuf, t->filenames[i] + sizeof( DEFAULT_SOUNDPATH ) - 1, sizeof( matchbuf ));
 		COM_StripExtension( matchbuf );
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 		numsounds++;
 	}
 
-	Con_Printf( "\n^3 %i sounds found.\n", numsounds );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i sounds found.\n", numsounds );
 	Mem_Free( t );
 
 	// cut shortestMatch to the amount common with s
@@ -505,7 +523,7 @@ Cmd_GetItemsList
 Prints or complete item classname (weapons only)
 =====================================
 */
-static qboolean Cmd_GetItemsList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetItemsList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 #if !XASH_DEDICATED
 	search_t		*t;
@@ -527,11 +545,13 @@ static qboolean Cmd_GetItemsList( const char *s, char *completedname, int length
 			continue;
 
 		COM_FileBase( t->filenames[i], matchbuf, sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 		numitems++;
 	}
 
-	Con_Printf( "\n^3 %i items found.\n", numitems );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i items found.\n", numitems );
 	Mem_Free( t );
 
 	// cut shortestMatch to the amount common with s
@@ -555,7 +575,7 @@ Cmd_GetKeysList
 Autocomplete for bind command
 =====================================
 */
-static qboolean Cmd_GetKeysList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetKeysList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 #if !XASH_DEDICATED
 	size_t i, numkeys;
@@ -583,10 +603,12 @@ static qboolean Cmd_GetKeysList( const char *s, char *completedname, int length 
 	for( i = 0; i < numkeys; i++ )
 	{
 		Q_strncpy( matchbuf, keys[i], sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 	}
 
-	Con_Printf( "\n^3 %zu keys found.\n", numkeys );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %zu keys found.\n", numkeys );
 
 	if( completedname && length )
 	{
@@ -645,7 +667,7 @@ Cmd_GetCommandsList
 Autocomplete for bind command
 =====================================
 */
-static qboolean Cmd_GetCommandsAndCvarsList( const char *s, char *completedname, int length, qboolean cmds, qboolean cvars, qboolean toggle )
+static qboolean Cmd_GetCommandsAndCvarsList( const char *s, char *completedname, int length, qboolean cmds, qboolean cvars, qboolean toggle, qboolean print_suggestions )
 {
 	size_t i;
 	string matchbuf;
@@ -683,10 +705,12 @@ static qboolean Cmd_GetCommandsAndCvarsList( const char *s, char *completedname,
 	for( i = 0; i < list.matchCount; i++ )
 	{
 		Q_strncpy( matchbuf, list.cmds[i], sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 	}
 
-	Con_Printf( "\n^3 %i %s found.\n", list.matchCount, cmds ? "commands" : "variables" );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i %s found.\n", list.matchCount, cmds ? "commands" : "variables" );
 
 	if( completedname && length )
 	{
@@ -715,9 +739,9 @@ Cmd_GetCommandsList
 Autocomplete for bind command
 =====================================
 */
-static qboolean Cmd_GetCommandsList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetCommandsList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
-	return Cmd_GetCommandsAndCvarsList( s, completedname, length, true, true, false );
+	return Cmd_GetCommandsAndCvarsList( s, completedname, length, true, true, false, print_suggestions );
 }
 
 /*
@@ -727,10 +751,10 @@ Cmd_GetCvarList
 Autocomplete for bind command
 =====================================
 */
-static qboolean Cmd_GetCvarsList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetCvarsList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	qboolean toggle = !Q_stricmp( Cmd_Argv( 0 ), "toggle" );
-	return Cmd_GetCommandsAndCvarsList( s, completedname, length, false, true, toggle );
+	return Cmd_GetCommandsAndCvarsList( s, completedname, length, false, true, toggle, print_suggestions );
 }
 
 /*
@@ -740,7 +764,7 @@ Cmd_GetCustomList
 Prints or complete .HPK filenames
 =====================================
 */
-static qboolean Cmd_GetCustomList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetCustomList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	search_t		*t;
 	string		matchbuf;
@@ -760,11 +784,13 @@ static qboolean Cmd_GetCustomList( const char *s, char *completedname, int lengt
 			continue;
 
 		COM_FileBase( t->filenames[i], matchbuf, sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 		numitems++;
 	}
 
-	Con_Printf( "\n^3 %i items found.\n", numitems );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i items found.\n", numitems );
 	Mem_Free( t );
 
 	// cut shortestMatch to the amount common with s
@@ -786,7 +812,7 @@ Cmd_GetGameList
 Prints or complete gamedir name
 =====================================
 */
-static qboolean Cmd_GetGamesList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetGamesList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	int	i, numgamedirs;
 	string	gamedirs[MAX_MODS];
@@ -811,10 +837,12 @@ static qboolean Cmd_GetGamesList( const char *s, char *completedname, int length
 	for( i = 0; i < numgamedirs; i++ )
 	{
 		Q_strncpy( matchbuf, gamedirs[i], sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 	}
 
-	Con_Printf( "\n^3 %i games found.\n", numgamedirs );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i games found.\n", numgamedirs );
 
 	// cut shortestMatch to the amount common with s
 	if( completedname && length )
@@ -835,7 +863,7 @@ Cmd_GetCDList
 Prints or complete CD command name
 =====================================
 */
-static qboolean Cmd_GetCDList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetCDList( const char *s, char *completedname, int length, qboolean print_suggestions )
 {
 	int i, numcdcommands;
 	string	cdcommands[8];
@@ -872,10 +900,12 @@ static qboolean Cmd_GetCDList( const char *s, char *completedname, int length )
 	for( i = 0; i < numcdcommands; i++ )
 	{
 		Q_strncpy( matchbuf, cdcommands[i], sizeof( matchbuf ));
-		Con_Printf( "%16s\n", matchbuf );
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
 	}
 
-	Con_Printf( "\n^3 %i commands found.\n", numcdcommands );
+	if( print_suggestions )
+		Con_Printf( "\n^3 %i commands found.\n", numcdcommands );
 
 	// cut shortestMatch to the amount common with s
 	if( completedname && length )
@@ -892,7 +922,6 @@ static qboolean Cmd_GetCDList( const char *s, char *completedname, int length )
 static qboolean Cmd_CheckMapsList_R( qboolean fRefresh, qboolean onlyingamedir )
 {
 	qboolean	use_filter = false;
-	byte	buf[MAX_SYSPATH];
 	string	mpfilter;
 	char	*buffer;
 	size_t	buffersize;
@@ -939,14 +968,15 @@ static qboolean Cmd_CheckMapsList_R( qboolean fRefresh, qboolean onlyingamedir )
 
 		if( f )
 		{
-			qboolean  have_spawnpoints = false;
-			dlump_t   entities;
+			qboolean    have_spawnpoints = false;
+			dlump_t     entities;
+			fs_offset_t filelen;
+			byte        buf[MAX_SYSPATH] = { 0 };
 
-			memset( buf, 0, MAX_SYSPATH );
-			FS_Read( f, buf, MAX_SYSPATH );
+			filelen = FS_Read( f, buf, MAX_SYSPATH );
 
 			// check all the lumps and some other errors
-			if( !Mod_TestBmodelLumps( f, t->filenames[i], buf, true, &entities ))
+			if( !Mod_TestBmodelLumps( f, t->filenames[i], buf, filelen, true, &entities ))
 			{
 				FS_Close( f );
 				continue;
@@ -1113,14 +1143,14 @@ Autocomplete filename
 for various cmds
 ============
 */
-static qboolean Cmd_AutocompleteName( const char *source, int arg, char *buffer, size_t bufsize )
+static qboolean Cmd_AutocompleteName( const char *source, int arg, char *buffer, size_t bufsize, qboolean print_suggestions )
 {
 	int i;
 
 	for( i = 0; i < ARRAYSIZE( cmd_list ); i++  )
 	{
 		if( cmd_list[i].arg == arg && Cmd_CheckName( cmd_list[i].name ))
-			return cmd_list[i].func( source, buffer, bufsize );
+			return cmd_list[i].func( source, buffer, bufsize, print_suggestions );
 	}
 
 	return false;
@@ -1199,7 +1229,7 @@ Con_CompleteCommand
 perform Tab expansion
 ===============
 */
-void Con_CompleteCommand( field_t *field )
+void Con_CompleteCommand( field_t *field, qboolean print_suggestions )
 {
 	field_t	temp;
 	string	filename;
@@ -1246,7 +1276,7 @@ void Con_CompleteCommand( field_t *field )
 	temp = *con.completionField;
 
 	// autocomplete second arg
-	if( (Cmd_Argc() >= 2) || ((Cmd_Argc() == 1) && nextcmd) )
+	if(( Cmd_Argc() >= 2 ) || ( Cmd_Argc() == 1 && nextcmd ))
 	{
 		con.completionBuffer = Cmd_Argv( Cmd_Argc() - 1 );
 
@@ -1257,7 +1287,7 @@ void Con_CompleteCommand( field_t *field )
 		if( !COM_CheckStringEmpty( con.completionBuffer ) )
 			return;
 
-		if( Cmd_AutocompleteName( con.completionBuffer, Cmd_Argc() - 1, filename, sizeof( filename ) ) )
+		if( Cmd_AutocompleteName( con.completionBuffer, Cmd_Argc() - 1, filename, sizeof( filename ), print_suggestions ))
 		{
 			con.completionField->buffer[0] = 0;
 
@@ -1308,11 +1338,14 @@ void Con_CompleteCommand( field_t *field )
 		con.completionField->cursor = Q_strlen( con.completionField->buffer );
 		Con_ConcatRemaining( temp.buffer, con.completionString );
 
-		Con_Printf( "]%s\n", con.completionField->buffer );
-
 		// run through again, printing matches
-		Cmd_LookupCmds( NULL, NULL, (setpair_t)Con_PrintCmdMatches );
-		Cvar_LookupVars( 0, NULL, NULL, (setpair_t)Con_PrintCvarMatches );
+		if( print_suggestions )
+		{
+			Con_Printf( "]%s\n", con.completionField->buffer );
+
+			Cmd_LookupCmds( NULL, NULL, (setpair_t)Con_PrintCmdMatches );
+			Cvar_LookupVars( 0, NULL, NULL, (setpair_t)Con_PrintCvarMatches );
+		}
 	}
 }
 
@@ -1334,7 +1367,7 @@ void Cmd_AutoComplete( char *complete_string )
 	Q_strncpy( input.buffer, complete_string, sizeof( input.buffer ) );
 	input.cursor = input.scroll = 0;
 
-	Con_CompleteCommand( &input );
+	Con_CompleteCommand( &input, true );
 
 	// setup output
 	if( input.buffer[0] == '\\' || input.buffer[0] == '/' )

@@ -263,7 +263,7 @@ static void SDLash_ActiveEvent( int gain )
 		}
 
 		host.force_draw_version_time = host.realtime + 2.0;
-		VID_RestoreScreenResolution();
+		VID_RestoreScreenResolution( (window_mode_t)vid_fullscreen.value );
 	}
 }
 
@@ -387,11 +387,22 @@ static void SDLash_EventHandler( SDL_Event *event )
 		case SDL_WINDOWEVENT_MOVED:
 		{
 			char val[32];
+			int top, left;
+			int x = event->window.data1;
+			int y = event->window.data2;
 
-			Q_snprintf( val, sizeof( val ), "%d", event->window.data1 );
+			// adjust for window decorations - SDL reports client area position,
+			// but SDL_CreateWindow positions the frame
+			if( SDL_GetWindowBordersSize( host.hWnd, &top, &left, NULL, NULL ) == 0 )
+			{
+				x -= left;
+				y -= top;
+			}
+
+			Q_snprintf( val, sizeof( val ), "%d", x );
 			Cvar_DirectSet( &window_xpos, val );
 
-			Q_snprintf( val, sizeof( val ), "%d", event->window.data2 );
+			Q_snprintf( val, sizeof( val ), "%d", y );
 			Cvar_DirectSet( &window_ypos, val );
 
 			if ( vid_fullscreen.value == WINDOW_MODE_WINDOWED )
@@ -401,7 +412,7 @@ static void SDLash_EventHandler( SDL_Event *event )
 		case SDL_WINDOWEVENT_MINIMIZED:
 			host.status = HOST_SLEEP;
 			Cvar_DirectSet( &vid_maximized, "0" );
-			VID_RestoreScreenResolution( );
+			VID_RestoreScreenResolution( (window_mode_t)vid_fullscreen.value );
 			break;
 		case SDL_WINDOWEVENT_RESTORED:
 			host.status = HOST_FRAME;
@@ -417,14 +428,7 @@ static void SDLash_EventHandler( SDL_Event *event )
 			SDLash_ActiveEvent( false );
 			break;
 		case SDL_WINDOWEVENT_RESIZED:
-#if !XASH_MOBILE_PLATFORM
-			if( vid_fullscreen.value == WINDOW_MODE_WINDOWED )
-#endif
-			{
-				SDL_Window *wnd = SDL_GetWindowFromID( event->window.windowID );
-				VID_SaveWindowSize( event->window.data1, event->window.data2,
-					FBitSet( SDL_GetWindowFlags( wnd ), SDL_WINDOW_MAXIMIZED ) != 0 );
-			}
+			VID_SaveWindowSize( event->window.data1, event->window.data2 );
 			break;
 		case SDL_WINDOWEVENT_MAXIMIZED:
 			Cvar_DirectSet( &vid_maximized, "1" );

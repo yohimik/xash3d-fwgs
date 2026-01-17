@@ -805,22 +805,23 @@ Create entity patch for selected map
 */
 void SV_WriteEntityPatch( const char *filename )
 {
-	int		lumpofs = 0, lumplen = 0;
-	byte		buf[MAX_TOKEN]; // 1 kb
-	string		bspfilename;
-	dlump_t entities;
-	file_t		*f;
+	int         lumpofs = 0, lumplen = 0;
+	byte        buf[MAX_TOKEN] = { 0 }; // 1 kb
+	string      bspfilename;
+	dlump_t     entities;
+	file_t      *f;
+	fs_offset_t filelen;
 
 	Q_snprintf( bspfilename, sizeof( bspfilename ), "maps/%s.bsp", filename );
 
 	f = FS_Open( bspfilename, "rb", false );
-	if( !f ) return;
+	if( !f )
+		return;
 
-	memset( buf, 0, MAX_TOKEN );
-	FS_Read( f, buf, MAX_TOKEN );
+	filelen = FS_Read( f, buf, MAX_TOKEN );
 
 	// check all the lumps and some other errors
-	if( !Mod_TestBmodelLumps( f, bspfilename, buf, true, &entities ))
+	if( !Mod_TestBmodelLumps( f, bspfilename, buf, filelen, true, &entities ))
 	{
 		FS_Close( f );
 		return;
@@ -853,27 +854,28 @@ pfnMapIsValid use this
 */
 static char *SV_ReadEntityScript( const char *filename, int *flags )
 {
-	string		bspfilename, entfilename;
-	int		lumpofs = 0, lumplen = 0;
-	byte		buf[MAX_TOKEN];
-	char		*ents = NULL;
-	dlump_t entities;
-	size_t		ft1, ft2;
-	file_t		*f;
+	string      bspfilename, entfilename;
+	int         lumpofs = 0, lumplen = 0;
+	byte        buf[MAX_TOKEN] = { 0 };
+	char        *ents = NULL;
+	dlump_t     entities;
+	size_t      ft1, ft2;
+	file_t      *f;
+	fs_offset_t filelen;
 
 	*flags = 0;
 
 	Q_snprintf( bspfilename, sizeof( bspfilename ), "maps/%s.bsp", filename );
 
 	f = FS_Open( bspfilename, "rb", false );
-	if( !f ) return NULL;
+	if( !f )
+		return NULL;
 
 	SetBits( *flags, MAP_IS_EXIST );
-	memset( buf, 0, MAX_TOKEN );
-	FS_Read( f, buf, MAX_TOKEN );
+	filelen = FS_Read( f, buf, sizeof( buf ));
 
 	// check all the lumps and some other errors
-	if( !Mod_TestBmodelLumps( f, bspfilename, buf, (host_developer.value) ? false : true, &entities ))
+	if( !Mod_TestBmodelLumps( f, bspfilename, buf, filelen, (host_developer.value) ? false : true, &entities ))
 	{
 		SetBits( *flags, MAP_INVALID_VERSION );
 		FS_Close( f );
@@ -1927,6 +1929,8 @@ static int GAME_EXPORT pfnWalkMove( edict_t *ent, float yaw, float dist, int iMo
 		return SV_MoveTest( ent, move, true );
 	case WALKMOVE_CHECKONLY:
 		return SV_MoveStep( ent, move, false);
+	default:
+		Host_Error( "%s: unknown mode %d\n", __func__, iMode );
 	}
 	return 0;
 }
@@ -4801,7 +4805,7 @@ static enginefuncs_t gEngfuncs =
 	COM_RandomLong,
 	COM_RandomFloat,
 	pfnSetView,
-	pfnTime,
+	Sys_FloatTime,
 	pfnCrosshairAngle,
 	COM_LoadFileForMe,
 	COM_FreeFile,
@@ -5226,6 +5230,7 @@ qboolean SV_LoadProgs( const char *name )
 	static globalvars_t		gpGlobals;
 	static playermove_t		gpMove;
 	edict_t			*e;
+	qboolean init_entity_api = false;
 
 	if( svgame.hInstance )
 		return true;
@@ -5262,6 +5267,7 @@ qboolean SV_LoadProgs( const char *name )
 
 	if( !GetEntityAPI && !GetEntityAPI2 )
 	{
+		COM_PushLibraryError( "missing GetEntityAPI and GetEntityAPI2 exports" );
 		COM_FreeLibrary( svgame.hInstance );
 		Con_Printf( S_ERROR "%s: failed to get address of GetEntityAPI proc\n", __func__ );
 		svgame.hInstance = NULL;
@@ -5273,6 +5279,7 @@ qboolean SV_LoadProgs( const char *name )
 
 	if( !GiveFnptrsToDll )
 	{
+		COM_PushLibraryError( "missing GiveFnptrsToDll export" );
 		COM_FreeLibrary( svgame.hInstance );
 		Con_Printf( S_ERROR "%s: failed to get address of GiveFnptrsToDll proc\n", __func__ );
 		svgame.hInstance = NULL;
@@ -5297,35 +5304,31 @@ qboolean SV_LoadProgs( const char *name )
 
 	version = INTERFACE_VERSION;
 
-	if( GetEntityAPI2 )
+	if( GetEntityAPI2 && GetEntityAPI2( &svgame.dllFuncs, &version ))
 	{
-		if( !GetEntityAPI2( &svgame.dllFuncs, &version ))
+		if( INTERFACE_VERSION == version )
 		{
-			if( INTERFACE_VERSION != version )
-				Con_Printf( S_WARN "%s: interface version %i should be %i\n", __func__, INTERFACE_VERSION, version );
-
-			// fallback to old API
-			if( GetEntityAPI && !GetEntityAPI( &svgame.dllFuncs, version ))
-			{
-				COM_FreeLibrary( svgame.hInstance );
-				Con_Printf( S_ERROR "%s: couldn't get entity API\n", __func__ );
-				svgame.hInstance = NULL;
-				Mem_FreePool( &svgame.mempool );
-				return false;
-			}
-			else Con_Reportf( "%s: ^2initailized legacy EntityAPI ^7ver. %i\n", __func__, version );
+			init_entity_api = true;
+			Con_Reportf( "%s: ^2initailized extended EntityAPI ^7ver. %i\n", __func__, version );
 		}
-		else Con_Reportf( "%s: ^2initailized extended EntityAPI ^7ver. %i\n", __func__, version );
+		else Con_Printf( S_WARN "%s: interface version %i should be %i\n", __func__, INTERFACE_VERSION, version );
 	}
-	else if( GetEntityAPI && !GetEntityAPI( &svgame.dllFuncs, version ))
+
+	if( !init_entity_api && GetEntityAPI && GetEntityAPI( &svgame.dllFuncs, version ))
 	{
+		init_entity_api = true;
+		Con_Reportf( "%s: ^2initailized legacy EntityAPI ^7ver. %i\n", __func__, version );
+	}
+
+	if( !init_entity_api )
+	{
+		COM_PushLibraryError( "can't init entity API" );
 		COM_FreeLibrary( svgame.hInstance );
 		Con_Printf( S_ERROR "%s: couldn't get entity API\n", __func__ );
 		svgame.hInstance = NULL;
 		Mem_FreePool( &svgame.mempool );
 		return false;
 	}
-	else Con_Reportf( "%s: ^2initailized legacy EntityAPI ^7ver. %i\n", __func__, version );
 
 	SV_InitOperatorCommands();
 	Mod_InitStudioAPI();

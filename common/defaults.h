@@ -56,7 +56,7 @@ SETUP BACKENDS DEFINITIONS
 // select messagebox implementation
 //
 #ifndef XASH_MESSAGEBOX
-	#if XASH_SDL == 2 && !XASH_NSWITCH // SDL2 messageboxes are not available on NSW
+	#if XASH_SDL >= 2 && !XASH_NSWITCH // SDL2 messageboxes are not available on NSW
 		#define XASH_MESSAGEBOX MSGBOX_SDL
 	#elif XASH_WIN32
 		#define XASH_MESSAGEBOX MSGBOX_WIN32
@@ -73,7 +73,7 @@ SETUP BACKENDS DEFINITIONS
 // no timer - no xash
 //
 #ifndef XASH_TIMER
-	#if XASH_SDL == 2
+	#if XASH_SDL >= 2
 		#define XASH_TIMER TIMER_SDL
 	#elif XASH_WIN32
 		#define XASH_TIMER TIMER_WIN32
@@ -152,12 +152,6 @@ Default build-depended cvar and constant values
 	#define DEFAULT_M_IGNORE     "1"
 #endif // !XASH_MOBILE_PLATFORM && !XASH_NSWITCH
 
-#if XASH_IOS
-	// this means that libraries are provided with engine, but not in game data
-	// You need add library loading code to library.c when adding new platform
-	#define XASH_INTERNAL_GAMELIBS
-#endif // XASH_IOS
-
 // Defaults
 #ifndef DEFAULT_TOUCH_ENABLE
 	#define DEFAULT_TOUCH_ENABLE "0"
@@ -180,7 +174,7 @@ Default build-depended cvar and constant values
 #endif // DEFAULT_ALLOWCONSOLE
 
 #ifndef DEFAULT_FULLSCREEN
-	#define DEFAULT_FULLSCREEN "1" // must be a string
+	#define DEFAULT_FULLSCREEN "2" // must be a string
 #endif // DEFAULT_FULLSCREEN
 
 #ifndef DEFAULT_MAX_EDICTS
@@ -193,6 +187,8 @@ Default build-depended cvar and constant values
 		#define DEFAULT_ACCELERATED_RENDERER "gu"
 	#elif XASH_MOBILE_PLATFORM
 		#define DEFAULT_ACCELERATED_RENDERER "gles1"
+	#elif XASH_IOS
+		#define DEFAULT_ACCELERATED_RENDERER "gles2"
 	#else // !XASH_MOBILE_PLATFORM
 		#define DEFAULT_ACCELERATED_RENDERER "gl"
 	#endif // !XASH_MOBILE_PLATFORM

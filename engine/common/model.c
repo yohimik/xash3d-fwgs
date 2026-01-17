@@ -29,8 +29,9 @@ static model_t	mod_known[MAX_MODELS];
 static int	mod_numknown = 0;
 poolhandle_t      com_studiocache;		// cache for submodels
 CVAR_DEFINE( mod_studiocache, "r_studiocache", "1", FCVAR_ARCHIVE, "enables studio cache for speedup tracing hitboxes" );
-CVAR_DEFINE_AUTO( r_wadtextures, "0", 0, "completely ignore textures in the bsp-file if enabled" );
+CVAR_DEFINE_AUTO( r_wadtextures, "0", FCVAR_LATCH, "completely ignore textures in the bsp-file if enabled" );
 CVAR_DEFINE_AUTO( r_showhull, "0", 0, "draw collision hulls 1-3" );
+CVAR_DEFINE_AUTO( r_allow_wad3_luma, "0", FCVAR_LATCH|FCVAR_ARCHIVE, "allow usage of luma textures in wad3 (tilde textures)" );
 
 /*
 ===============================================================================
@@ -54,7 +55,7 @@ static void Mod_Modellist_f( void )
 
 	for( i = nummodels = 0, mod = mod_known; i < mod_numknown; i++, mod++ )
 	{
-		if( !COM_CheckStringEmpty( mod->name ) )
+		if( mod->needload == NL_UNREFERENCED )
 			continue; // free slot
 		Con_Printf( "%s\n", mod->name );
 		nummodels++;
@@ -73,7 +74,7 @@ Mod_FreeUserData
 static void Mod_FreeUserData( model_t *mod )
 {
 	// ignore submodels and freed models
-	if( !COM_CheckStringEmpty( mod->name ) || mod->name[0] == '*' )
+	if( mod->needload == NL_UNREFERENCED || mod->name[0] == '*' )
 		return;
 
 	if( Host_IsDedicated() )
@@ -87,7 +88,7 @@ static void Mod_FreeUserData( model_t *mod )
 #if !XASH_DEDICATED
 	else
 	{
-		ref.dllFuncs.Mod_ProcessRenderData( mod, false, NULL );
+		ref.dllFuncs.Mod_ProcessRenderData( mod, false, NULL, 0 );
 	}
 #endif
 }
@@ -100,7 +101,7 @@ Mod_FreeModel
 void Mod_FreeModel( model_t *mod )
 {
 	// already freed?
-	if( !mod || !COM_CheckStringEmpty( mod->name ) )
+	if( !mod || mod->needload == NL_UNREFERENCED )
 		return;
 
 	if( mod->type != mod_brush || mod->name[0] != '*' )
@@ -142,6 +143,7 @@ void Mod_Init( void )
 	Cvar_RegisterVariable( &mod_studiocache );
 	Cvar_RegisterVariable( &r_wadtextures );
 	Cvar_RegisterVariable( &r_showhull );
+	Cvar_RegisterVariable( &r_allow_wad3_luma );
 
 	Cmd_AddCommand( "mapstats", Mod_PrintWorldStats_f, "show stats for currently loaded map" );
 	Cmd_AddCommand( "modellist", Mod_Modellist_f, "display loaded models list" );
@@ -228,7 +230,10 @@ model_t *Mod_FindName( const char *filename, qboolean trackCRC )
 
 	// find a free model slot spot
 	for( i = 0, mod = mod_known; i < mod_numknown; i++, mod++ )
-		if( !COM_CheckStringEmpty( mod->name ) ) break; // this is a valid spot
+	{
+		if( mod->needload == NL_UNREFERENCED )
+			break; // this is a valid spot
+	}
 
 	if( i == mod_numknown )
 	{
@@ -296,19 +301,19 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	// call the apropriate loader
 	switch( *(uint *)buf )
 	{
-	case IDSTUDIOHEADER:
+	case LittleLong( IDSTUDIOHEADER ):
 		Mod_LoadStudioModel( mod, buf, &loaded );
 		break;
-	case IDSPRITEHEADER:
-		Mod_LoadSpriteModel( mod, buf, &loaded );
+	case LittleLong( IDSPRITEHEADER ):
+		Mod_LoadSpriteModel( mod, buf, length, &loaded );
 		break;
-	case IDALIASHEADER:
+	case LittleLong( IDALIASHEADER ):
 		Mod_LoadAliasModel( mod, buf, &loaded );
 		break;
-	case Q1BSP_VERSION:
-	case HLBSP_VERSION:
-	case QBSP2_VERSION:
-		Mod_LoadBrushModel( mod, buf, &loaded );
+	case LittleLong( Q1BSP_VERSION ):
+	case LittleLong( HLBSP_VERSION ):
+	case LittleLong( QBSP2_VERSION ):
+		Mod_LoadBrushModel( mod, buf, length, &loaded );
 		break;
 	default:
 		Mem_Free( buf );
@@ -334,7 +339,7 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 #if !XASH_DEDICATED
 		else
 		{
-			loaded2 = ref.dllFuncs.Mod_ProcessRenderData( mod, true, buf );
+			loaded2 = ref.dllFuncs.Mod_ProcessRenderData( mod, true, buf, length );
 		}
 #endif
 	}
@@ -427,9 +432,11 @@ static void Mod_PurgeStudioCache( void )
 	{
 		if( mod_known[i].type == mod_studio )
 			mod_known[i].submodels = NULL;
+
 		if( mod_known[i].name[0] == '*' )
 			Mod_FreeModel( &mod_known[i] );
-		mod_known[i].needload = NL_UNREFERENCED;
+
+		mod_known[i].needload = NL_FREE_UNUSED;
 	}
 
 	Mem_EmptyPool( com_studiocache );
@@ -480,7 +487,7 @@ void Mod_FreeUnused( void )
 	// never tries to release worldmodel
 	for( i = 1, mod = &mod_known[1]; i < mod_numknown; i++, mod++ )
 	{
-		if( mod->needload == NL_UNREFERENCED && COM_CheckString( mod->name ))
+		if( mod->needload == NL_FREE_UNUSED )
 			Mod_FreeModel( mod );
 	}
 }

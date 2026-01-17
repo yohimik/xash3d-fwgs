@@ -132,10 +132,7 @@ qboolean CL_ConvertImageToWAD3( const char *filename )
 	}
 	else
 	{
-		quant = Mem_Malloc( host.imagepool, sizeof( *quant ));
-		*quant = *image;
-		quant->buffer = Mem_Malloc( host.imagepool, quant->size );
-		memcpy( quant->buffer, image->buffer, quant->size );
+		quant = FS_CopyImage( image );
 		Image_Quantize( quant ); // it's so weird, it writes result to same structure as used for input data
 
 		if( !quant || !quant->buffer || !quant->palette )
@@ -151,11 +148,9 @@ qboolean CL_ConvertImageToWAD3( const char *filename )
 			}
 		}
 
-		// make last palette color black to avoid blueish texture filtering artifacts
 		quant->palette[255 * 3 + 0] = 0;
 		quant->palette[255 * 3 + 1] = 0;
-		quant->palette[255 * 3 + 2] = 0;
-
+		quant->palette[255 * 3 + 2] = 255;
 		memcpy( palette, quant->palette, SPRAY_PALETTE_BYTES );
 		indexed = quant->buffer;
 	}

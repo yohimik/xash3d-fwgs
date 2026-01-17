@@ -206,6 +206,7 @@ static void CL_DeltaEntityGS( const delta_header_t *hdr, sizebuf_t *msg, frame_t
 	qboolean newent = from == NULL;
 	int pack = frame->num_entities;
 	qboolean has_update = msg != NULL;
+	static entity_state_t nullent;
 
 	// alloc next slot to store update
 	to = &cls.packet_entities[cls.next_client_entities % cls.num_client_entities];
@@ -233,7 +234,17 @@ static void CL_DeltaEntityGS( const delta_header_t *hdr, sizebuf_t *msg, frame_t
 		if( hdr->instanced )
 			from = &cl.instanced_baseline[hdr->instanced_baseline_index];
 		else if( hdr->offset != 0 )
-			from = &cls.packet_entities[(cls.next_client_entities - hdr->offset) % cls.num_client_entities];
+		{
+			// FIXME: the usage of `offset` is incorrect here as the entities might
+			// not be ordered in cls.packet_entities the same way as on server
+			// catch the error, print the scary message and fix it up to nullent
+			if( cls.next_client_entities - hdr->offset < 0 )
+			{
+				Con_Printf( S_ERROR "%s: prevented delta-ing from invalid entity (%d - %d < 0)\n", __func__, cls.next_client_entities, hdr->offset );
+				from = &nullent;
+			}
+			else from = &cls.packet_entities[(cls.next_client_entities - hdr->offset ) % cls.num_client_entities];
+		}
 		else
 			from = &ent->baseline;
 	}
@@ -467,7 +478,7 @@ static void CL_ParseSoundPacketGS( sizebuf_t *msg )
 
 	chan = MSG_ReadUBitLong( msg, 3 );
 	entnum = MSG_ReadUBitLong( msg, MAX_GOLDSRC_ENTITY_BITS );
-	if( FBitSet( flags, SND_LEGACY_LARGE_INDEX ))
+	if( FBitSet( flags, SND_GOLDSRC_LARGE_INDEX ))
 		sound = MSG_ReadWord( msg );
 	else sound = MSG_ReadByte( msg );
 	MSG_ReadGSBitVec3Coord( msg, pos );
@@ -478,7 +489,7 @@ static void CL_ParseSoundPacketGS( sizebuf_t *msg )
 
 	MSG_EndBitWriting( msg );
 
-	ClearBits( flags, SND_LEGACY_LARGE_INDEX );
+	ClearBits( flags, SND_GOLDSRC_LARGE_INDEX );
 
 	if( FBitSet( flags, SND_SENTENCE ))
 	{
@@ -769,7 +780,7 @@ void CL_ParseGoldSrcServerMessage( sizebuf_t *msg )
 			CL_ParseExec( msg );
 			break;
 		default:
-			CL_ParseUserMessage( msg, cmd, PROTO_LEGACY );
+			CL_ParseUserMessage( msg, cmd, PROTO_GOLDSRC );
 			cl.frames[cl.parsecountmod].graphdata.usr += MSG_GetNumBytesRead( msg ) - bufStart;
 			break;
 		}

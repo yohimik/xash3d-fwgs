@@ -112,7 +112,11 @@ static void CL_CreatePlaylist( const char *filename )
 	file_t	*f;
 
 	f = FS_Open( filename, "w", false );
-	if( !f ) return;
+	if( !f )
+	{
+		Con_Printf( S_ERROR "%s: can't open %s for write\n", __func__, filename );
+		return;
+	}
 
 	// make standard cdaudio playlist
 	FS_Print( f, "blank\n" );		// #1
@@ -1110,7 +1114,12 @@ void CL_ClearSpriteTextures( void )
 	int	i;
 
 	for( i = 1; i < MAX_CLIENT_SPRITES; i++ )
-		clgame.sprites[i].needload = NL_UNREFERENCED;
+	{
+		if( clgame.sprites[i].needload == NL_UNREFERENCED )
+			continue;
+
+		clgame.sprites[i].needload = NL_FREE_UNUSED;
+	}
 }
 
 // it's a Valve default value for LoadMapSprite (probably must be power of two)
@@ -1281,8 +1290,8 @@ static qboolean CL_LoadHudSprite( const char *szSpriteName, model_t *m_pSprite, 
 		Mod_LoadMapSprite( m_pSprite, buf, size, &loaded );
 	else
 	{
-		Mod_LoadSpriteModel( m_pSprite, buf, &loaded );
-		ref.dllFuncs.Mod_ProcessRenderData( m_pSprite, true, buf );
+		Mod_LoadSpriteModel( m_pSprite, buf, size, &loaded );
+		ref.dllFuncs.Mod_ProcessRenderData( m_pSprite, true, buf, size );
 	}
 
 	Mem_Free( buf );
@@ -1344,7 +1353,7 @@ static model_t *CL_LoadSpriteModel( const char *filename, uint type, uint texFla
 
 	for( i = 0, mod = &clgame.sprites[start]; i < MAX_CLIENT_SPRITES / 2; i++, mod++ )
 	{
-		if( !mod->name[0] )
+		if( mod->needload == NL_UNREFERENCED )
 			break; // this is a valid spot
 	}
 
@@ -3481,7 +3490,7 @@ static void GAME_EXPORT NetAPI_SendRequest( int context, int request, int flags,
 	nr->flags = flags;
 
 	// local servers request
-	Netchan_OutOfBandPrint( NS_CLIENT, nr->resp.remote_address, A2A_NETINFO" %i %i %i", FBitSet( flags, FNETAPI_LEGACY_PROTOCOL ) ? PROTOCOL_LEGACY_VERSION : PROTOCOL_VERSION, context, request );
+	Netchan_OutOfBandPrint( NS_CLIENT, nr->resp.remote_address, A2A_NETINFO" %i %i %i", PROTOCOL_VERSION, context, request );
 }
 
 /*
@@ -4001,14 +4010,14 @@ qboolean CL_LoadProgs( const char *name )
 	ClearExports( cdll_exports, ARRAYSIZE( cdll_exports ));
 
 	// trying to get single export
-	if(( GetClientAPI = (void *)COM_GetProcAddress( clgame.hInstance, "GetClientAPI" )) != NULL )
+	if(( GetClientAPI = COM_GetProcAddress( clgame.hInstance, "GetClientAPI" )) != NULL )
 	{
 		Con_Reportf( "%s: found single callback export\n", __func__ );
 
 		// trying to fill interface now
 		GetClientAPI( &clgame.dllFuncs );
 	}
-	else if(( GetClientAPI = (void *)COM_GetProcAddress( clgame.hInstance, "F" )) != NULL )
+	else if(( GetClientAPI = COM_GetProcAddress( clgame.hInstance, "F" )) != NULL )
 	{
 		Con_Reportf( "%s: found single callback export (secured client dlls)\n", __func__ );
 
@@ -4036,6 +4045,11 @@ qboolean CL_LoadProgs( const char *name )
 
 	if( missed_exports )
 	{
+		if( clgame.dllFuncs.pfnInit && clgame.dllFuncs.pfnRedraw && clgame.dllFuncs.pfnReset && clgame.dllFuncs.pfnUpdateClientData && clgame.dllFuncs.pfnVidInit && clgame.dllFuncs.pfnInitialize )
+			COM_PushLibraryError( "missing essential exports; outdated DLL!!!" );
+		else
+			COM_PushLibraryError( "missing essential exports" );
+
 		COM_FreeLibrary( clgame.hInstance );
 		clgame.hInstance = NULL;
 		return false;
@@ -4058,6 +4072,7 @@ qboolean CL_LoadProgs( const char *name )
 
 	if( !clgame.dllFuncs.pfnInitialize( &gEngfuncs, CLDLL_INTERFACE_VERSION ))
 	{
+		COM_PushLibraryError( "can't init client API" );
 		COM_FreeLibrary( clgame.hInstance );
 		Con_Reportf( "%s: can't init client API\n", __func__ );
 		clgame.hInstance = NULL;

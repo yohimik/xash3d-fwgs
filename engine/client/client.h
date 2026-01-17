@@ -525,6 +525,15 @@ typedef struct
 	qboolean use_extended_api;
 } gameui_static_t;
 
+typedef struct bandwidth_test_s
+{
+	int challenge;    // saved challenge
+	int retry;        // number of tests
+	qboolean started; // if test has been started
+	qboolean passed;  // if test has been passed successfully
+	qboolean failed;  // if bandwidth test has been failed
+} bandwidth_test_t;
+
 typedef struct
 {
 	connstate_t	state;
@@ -550,7 +559,7 @@ typedef struct
 	double		connect_time;		// for connection retransmits
 	int		max_fragment_size;		// we needs to test a real network bandwidth
 	int		connect_retry;		// how many times we send a connect packet to the server
-	qboolean		passed_bandwidth_test; // if testpacket matched CRC, stop test and send challenge
+	bandwidth_test_t bandwidth_test;
 	qboolean		spectator;		// not a real player, just spectator
 
 	local_state_t	spectator_state;		// init as client startup
@@ -948,12 +957,6 @@ void CL_BatchResourceRequest( qboolean initialize );
 int CL_EstimateNeededResources( void );
 
 //
-// cl_parse_48.c
-//
-void CL_ParseLegacyServerMessage( sizebuf_t *msg );
-void CL_LegacyPrecache_f( void );
-
-//
 // cl_parse_gs.c
 //
 void CL_ParseGoldSrcServerMessage( sizebuf_t *msg );
@@ -1178,6 +1181,7 @@ void UI_ConnectionProgress_Precache( void );
 void UI_ConnectionProgress_Connect( const char *server );
 void UI_ConnectionProgress_ChangeLevel( void );
 void UI_ConnectionProgress_ParseServerInfo( const char *server );
+char **GAME_EXPORT CL_GetFilesList( const char *pattern, int *numFiles, int gamedironly ); // used by both UI and Render APIs
 
 //
 // cl_mobile.c

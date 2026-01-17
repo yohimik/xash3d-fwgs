@@ -26,9 +26,9 @@ GNU General Public License for more details.
 #include "com_model.h"
 #include "studio.h"
 #include "r_efx.h"
-#include "com_image.h"
 #include "filesystem.h"
 #include "common/protocol.h"
+#include "cvardef.h"
 
 // RefAPI changelog:
 // 1. Initial release
@@ -58,7 +58,9 @@ GNU General Public License for more details.
 //    Removed R_DrawTileClear and Mod_LoadMapSprite, as they're implemented on engine side
 //    Removed FillRGBABlend. Now FillRGBA accepts rendermode parameter.
 // 10. Added R_GetWindowHandle to retrieve platform-specific window object.
-#define REF_API_VERSION 10
+// 11. Added size argument to Mod_ProcessRenderData
+// 12. Added Image_CalcImageSize
+#define REF_API_VERSION 12
 
 #define TF_SKY		(TF_SKYSIDE|TF_NOMIPMAP|TF_ALLOW_NEAREST)
 #define TF_FONT		(TF_NOMIPMAP|TF_CLAMP|TF_ALLOW_NEAREST)
@@ -104,6 +106,14 @@ typedef enum
 	DEMO_QUAKE1
 } demo_mode;
 
+typedef enum window_mode_e
+{
+	WINDOW_MODE_WINDOWED = 0,
+	WINDOW_MODE_FULLSCREEN,
+	WINDOW_MODE_BORDERLESS,
+	WINDOW_MODE_COUNT,
+} window_mode_t;
+
 typedef enum ref_window_type_e
 {
 	REF_WINDOW_TYPE_NULL = 0,
@@ -111,7 +121,8 @@ typedef enum ref_window_type_e
 	REF_WINDOW_TYPE_X11, // Display*
 	REF_WINDOW_TYPE_WAYLAND, // wl_display*
 	REF_WINDOW_TYPE_MACOS, // NSWindow*
-	REF_WINDOW_TYPE_SDL, // SDL_Window*
+	REF_WINDOW_TYPE_SDL2, // SDL2 SDL_Window*
+	REF_WINDOW_TYPE_SDL3, // SDL3 SDL_Window*
 } ref_window_type_t;
 
 typedef struct
@@ -124,11 +135,11 @@ typedef struct ref_globals_s
 {
 	qboolean developer;
 
-	// viewport width and height
+	// viewport width and height (physical window size)
 	int      width;
 	int      height;
 
-	qboolean fullScreen;
+	window_mode_t window_mode;
 	qboolean wideScreen;
 
 	vec3_t vieworg;
@@ -143,6 +154,10 @@ typedef struct ref_globals_s
 	size_t		visbytes;		// cluster size
 
 	int desktopBitsPixel;
+
+	// scaling factor of physical window size compared to logical
+	float scale_x;
+	float scale_y;
 } ref_globals_t;
 
 typedef struct ref_client_s
@@ -205,12 +220,12 @@ enum ref_defaultsprite_e
 
 // the order of first three is important!
 // so you can use this value in IEngineStudio.StudioIsHardware
-enum ref_graphic_apis_e
+typedef enum ref_graphic_apis_e
 {
 	REF_SOFTWARE,	// hypothetical: just make a surface to draw on, in software
 	REF_GL,		// create GL context
 	REF_D3D,	// Direct3D
-};
+} ref_graphic_apis_t;
 
 typedef enum
 {
@@ -432,7 +447,7 @@ typedef struct ref_api_s
 	// video init
 	// try to create window
 	// will call GL_SetupAttributes in case of REF_GL
-	qboolean  (*R_Init_Video)( int type ); // will also load and execute renderer config(see R_GetConfigName)
+	qboolean (*R_Init_Video)( ref_graphic_apis_t type ); // will also load and execute renderer config(see R_GetConfigName)
 	void (*R_Free_Video)( void );
 
 	// GL
@@ -466,10 +481,11 @@ typedef struct ref_api_s
 	qboolean (*Image_Process)( rgbdata_t **pix, int width, int height, uint flags, float reserved );
 	rgbdata_t *(*FS_LoadImage)( const char *filename, const byte *buffer, size_t size );
 	qboolean (*FS_SaveImage)( const char *filename, rgbdata_t *pix );
-	rgbdata_t *(*FS_CopyImage)( rgbdata_t *in );
+	rgbdata_t *(*FS_CopyImage)( const rgbdata_t *in );
 	void (*FS_FreeImage)( rgbdata_t *pack );
 	void (*Image_SetMDLPointer)( byte *p );
 	const struct bpc_desc_s *(*Image_GetPFDesc)( int idx );
+	size_t (*Image_CalcImageSize)( int type, int width, int height, int depth );
 
 	// client exports
 	void	(*pfnDrawNormalTriangles)( void );
@@ -565,7 +581,7 @@ typedef struct ref_interface_s
 
 	// model management
 	// flags ignored for everything except spritemodels
-	qboolean (*Mod_ProcessRenderData)( model_t *mod, qboolean create, const byte *buffer );
+	qboolean (*Mod_ProcessRenderData)( model_t *mod, qboolean create, const byte *buffer, size_t buffersize );
 	void (*Mod_StudioLoadTextures)( model_t *mod, void *data );
 
 	// efx implementation

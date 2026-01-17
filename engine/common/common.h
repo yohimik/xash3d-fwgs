@@ -51,6 +51,8 @@ XASH SPECIFIC			- sort of hack that works only in Xash3D not in GoldSrc
 #include <sys/types.h> // off_t
 #endif
 
+#include "library_suffix.h"
+
 // configuration
 
 //
@@ -471,7 +473,7 @@ static inline int Cmd_AddCommandWithFlags( const char *cmd_name, xcommand_t func
 void Cmd_RemoveCommand( const char *cmd_name );
 cmd_t *Cmd_Exists( const char *cmd_name );
 void Cmd_LookupCmds( void *buffer, void *ptr, setpair_t callback );
-int Cmd_ListMaps( search_t *t , char *lastmapname, size_t len );
+int Cmd_ListMaps( search_t *t , char *lastmapname, size_t len, qboolean silent );
 void Cmd_TokenizeString( const char *text );
 void Cmd_ExecuteString( const char *text );
 void Cmd_ForwardToServer( void );
@@ -490,8 +492,7 @@ void Image_AddCmdFlags( uint flags );
 void FS_FreeImage( rgbdata_t *pack );
 rgbdata_t *FS_LoadImage( const char *filename, const byte *buffer, size_t size ) MALLOC_LIKE( FS_FreeImage, 1 ) WARN_UNUSED_RESULT;
 qboolean FS_SaveImage( const char *filename, rgbdata_t *pix );
-rgbdata_t *FS_CopyImage( rgbdata_t *in ) MALLOC_LIKE( FS_FreeImage, 1 ) WARN_UNUSED_RESULT;
-extern const bpc_desc_t PFDesc[];	// image get pixelformat
+rgbdata_t *FS_CopyImage( const rgbdata_t *in ) MALLOC_LIKE( FS_FreeImage, 1 ) WARN_UNUSED_RESULT;
 qboolean Image_Process( rgbdata_t **pix, int width, int height, uint flags, float reserved );
 void Image_PaletteHueReplace( byte *palSrc, int newHue, int start, int end, int pal_size );
 void Image_SetForceFlags( uint flags );	// set image force flags on loading
@@ -499,6 +500,8 @@ qboolean Image_CustomPalette( void );
 void Image_ClearForceFlags( void );
 void Image_SetMDLPointer( byte *p );
 void Image_CheckPaletteQ1( void );
+
+extern const bpc_desc_t PFDesc[PF_TOTALCOUNT];	// image get pixelformat
 
 /*
 ========================================================================
@@ -644,7 +647,6 @@ void Con_DPrintf( const char *fmt, ... ) FORMAT_CHECK( 1 );
 void Con_Printf( const char *szFmt, ... ) FORMAT_CHECK( 1 );
 int pfnNumberOfEntities( void );
 int pfnIsInGame( void );
-float pfnTime( void );
 #define copystring( s ) _copystring( host.mempool, s, __FILE__, __LINE__ )
 #define copystringpool( pool, s ) _copystring( pool, s, __FILE__, __LINE__ )
 #define SV_CopyString( s ) _copystring( svgame.stringspool, s, __FILE__, __LINE__ )
@@ -677,7 +679,7 @@ void pfnResetTutorMessageDecayData( void );
 //
 // con_utils.c
 //
-void Con_CompleteCommand( field_t *field );
+void Con_CompleteCommand( field_t *field, qboolean print_suggestions );
 void Cmd_AutoComplete( char *complete_string );
 void Cmd_AutoCompleteClear( void );
 void Host_InitializeConfig( file_t *f, const char *config, const char *description );
@@ -724,8 +726,8 @@ void HPAK_FlushHostQueue( void );
 typedef enum connprotocol_e
 {
 	PROTO_CURRENT = 0, // Xash3D 49
-	PROTO_LEGACY, // Xash3D 48
-	PROTO_QUAKE, // Quake 15
+	// RIP Xash3D 48
+	PROTO_QUAKE = 2, // Quake 15
 	PROTO_GOLDSRC, // GoldSrc 48
 } connprotocol_t;
 
@@ -822,7 +824,6 @@ uint LZSS_GetActualSize( const byte *source, size_t input_len );
 byte *LZSS_Compress( byte *pInput, int inputLength, uint *pOutputSize );
 uint LZSS_Decompress( const byte *pInput, byte *pOutput, size_t input_len, size_t output_len );
 void GL_FreeImage( const char *name );
-void VID_InitDefaultResolution( void );
 void VID_Init( void );
 void UI_SetActiveMenu( qboolean fActive );
 void UI_ShowConnectionWarning( void );

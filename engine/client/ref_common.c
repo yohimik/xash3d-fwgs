@@ -1,12 +1,34 @@
+/*
+ref_common.c - RefAPI implementation
+Copyright (C) 2025 Xash3D FWGS contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+*/
+
 #include "common.h"
 #include "client.h"
 #include "library.h"
 #include "cl_tent.h"
 #include "platform/platform.h"
 #include "vid_common.h"
+#include "imagelib.h"
 
 struct ref_state_s ref;
-ref_globals_t refState;
+
+ref_globals_t refState =
+{
+	// just have something valid until video subsystem is finished initializing
+	.width = 640,
+	.height = 480,
+};
 
 static const char* r_skyBoxSuffix[SKYBOX_MAX_SIDES] = { "rt", "bk", "lf", "ft", "up", "dn" };
 
@@ -291,7 +313,7 @@ static screenfade_t *pfnRefGetScreenFade( void )
 	return &clgame.fade;
 }
 
-static qboolean R_Init_Video_( const int type )
+static qboolean R_Init_Video_( ref_graphic_apis_t type )
 {
 	host.apply_opengl_config = true;
 	Cbuf_AddTextf( "exec %s.cfg\n", ref.dllFuncs.R_GetConfigName());
@@ -428,6 +450,7 @@ static const ref_api_t gEngfuncs =
 	FS_FreeImage,
 	Image_SetMDLPointer,
 	pfnImage_GetPFDesc,
+	Image_ComputeSize,
 
 	pfnDrawNormalTriangles,
 	pfnDrawTransparentTriangles,
@@ -443,7 +466,8 @@ static void R_UnloadProgs( void )
 	if( !ref.hInstance ) return;
 
 	// deinitialize renderer
-	ref.dllFuncs.R_Shutdown();
+	if (ref.dllFuncs.R_Shutdown)
+		ref.dllFuncs.R_Shutdown();
 
 	Cvar_FullSet( "host_refloaded", "0", FCVAR_READ_ONLY );
 
@@ -616,11 +640,11 @@ static void SetWidthAndHeightFromCommandLine( void )
 static void SetFullscreenModeFromCommandLine( void )
 {
 	if( Sys_CheckParm( "-borderless" ))
-		Cvar_DirectSet( &vid_fullscreen, "2" );
+		Cvar_DirectSetValue( &vid_fullscreen, WINDOW_MODE_BORDERLESS );
 	else if( Sys_CheckParm( "-fullscreen" ))
-		Cvar_DirectSet( &vid_fullscreen, "1" );
+		Cvar_DirectSetValue( &vid_fullscreen, WINDOW_MODE_FULLSCREEN );
 	else if( Sys_CheckParm( "-windowed" ))
-		Cvar_DirectSet( &vid_fullscreen, "0" );
+		Cvar_DirectSetValue( &vid_fullscreen, WINDOW_MODE_WINDOWED );
 }
 
 static void R_CollectRendererNames( void )
