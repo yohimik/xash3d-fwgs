@@ -33,13 +33,13 @@ def gcc_modifier_emscripten(conf):
 	v = conf.env
 
 	conf.env.cshlib_PATTERN = 'lib%s.wasm'
-	conf.env.cprogram_PATTERN = '%s.html'
+	conf.env.cprogram_PATTERN = '%s.js'
 
-	conf.env.CFLAGS_cshlib = ['-fPIC', '-sSIDE_MODULE=1']
+	conf.env.CFLAGS_cshlib = ['-fPIC', '-sSIDE_MODULE=1', '-Oz']
 	conf.env.CFLAGS_cstlib = ['-fPIC']
 	conf.env.CFLAGS_cprogram = ['-sMAIN_MODULE=1']
 
-	conf.env.LINKFLAGS_cshlib = ['-sSIDE_MODULE=1']
+	conf.env.LINKFLAGS_cshlib = ['-sSIDE_MODULE=1', '-Oz']
 	conf.env.LINKFLAGS_cprogram = ['-sMAIN_MODULE=1']
 
 @conf
@@ -47,12 +47,12 @@ def gxx_modifier_emscripten(conf):
 	v = conf.env
 
 	conf.env.cxxshlib_PATTERN = 'lib%s.wasm'
-	conf.env.cxxprogram_PATTERN = '%s.html'
-	conf.env.CXXFLAGS_cxxshlib = ['-fPIC', '-sSIDE_MODULE=1']
+	conf.env.cxxprogram_PATTERN = '%s.js'
+	conf.env.CXXFLAGS_cxxshlib = ['-fPIC', '-sSIDE_MODULE=1', '-Oz']
 	conf.env.CXXFLAGS_cxxstlib = ['-fPIC']
 	conf.env.CXXFLAGS_cxxprogram = ['-sMAIN_MODULE=1']
 
-	conf.env.LINKFLAGS_cxxshlib = ['-sSIDE_MODULE=1']
+	conf.env.LINKFLAGS_cxxshlib = ['-sSIDE_MODULE=1', '-Oz']
 	conf.env.LINKFLAGS_cxxprogram = ['-sMAIN_MODULE=1']
 
 @feature('cxxprogram', 'cprogram')
@@ -72,9 +72,6 @@ def apply_indexhtml(self):
 
 	inst_to = getattr(self, 'special_install_path', None)
 	if inst_to:
-		self.add_install_as(install_to=inst_to + '/index.html',
-			install_from=tsk.outputs[0], chmod=Utils.O644, task=tsk)
-
 		self.add_install_files(install_to=inst_to,
 			install_from=tsk.outputs[1:], chmod=Utils.O644, task=tsk)
 

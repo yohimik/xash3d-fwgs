@@ -1,31 +1,23 @@
 /*
-lightstyle.h - lighstyle description
-Copyright (C) 2011 Uncle Mike
-
+lib_emscripten.h - dladdr workaround for emscripten
+Copyright (C) 2025 ololoken
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
-
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
-#ifndef LIGHTSTYLE_H
-#define LIGHTSTYLE_H
+#if XASH_EMSCRIPTEN
+#ifndef LIB_EMSCRIPTEN_H
+#define LIB_EMSCRIPTEN_H
 
-#include "xash3d_types.h"
+#define Platform_POSIX_GetFuncName( x, y ) EMSCRIPTEN_GetFuncName(( x ), ( y ))
 
-typedef struct
-{
-	char		pattern[256];
-	float		map[256];
-	int		length;
-	float		value;
-	qboolean		interp;		// allow to interpolate this lightstyle
-	float		time;		// local time is gurantee what new style begins from the start, not mid or end of the sequence
-} lightstyle_t;
+const char *EMSCRIPTEN_GetFuncName(void *, void *);
 
-#endif//LIGHTSTYLE_H
+#endif // DLADDR_EMSCRIPTEN_H
+#endif

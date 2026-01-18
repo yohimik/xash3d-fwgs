@@ -430,7 +430,7 @@ static uint Voice_GetOpusCompressedData( byte *out, uint maxsize, uint *frames )
 	if( voice.input_file )
 	{
 		uint   numbytes;
-		double updateInterval, curtime = Sys_DoubleTime();
+		double updateInterval, curtime = Platform_DoubleTime();
 
 		updateInterval = curtime - voice.start_time;
 		voice.start_time = curtime;
@@ -505,7 +505,7 @@ static uint Voice_GetGSCompressedData( byte *out, uint maxsize, uint *frames )
 	if( voice.input_file )
 	{
 		uint   numbytes;
-		double updateInterval, curtime = Sys_DoubleTime();
+		double updateInterval, curtime = Platform_DoubleTime();
 
 		updateInterval = curtime - voice.start_time;
 		voice.start_time = curtime;
@@ -875,7 +875,7 @@ void Voice_RecordStart( void )
 			Sound_Process( &voice.input_file, voice.samplerate, voice.width, VOICE_PCM_CHANNELS, SOUND_RESAMPLE );
 			voice.input_file_pos = 0;
 
-			voice.start_time = Sys_DoubleTime();
+			voice.start_time = Platform_DoubleTime();
 			voice.is_recording = true;
 		}
 		else
@@ -918,8 +918,10 @@ void Voice_Disconnect( void )
 	VoiceCapture_Shutdown();
 	voice.device_opened = false;
 
-
-	Voice_ShutdownOpusDecoder();
+	if( voice.goldsrc )
+		Voice_ShutdownGoldSrcMode();
+	else
+		Voice_ShutdownOpusCustomMode();
 }
 
 /*
@@ -1089,26 +1091,10 @@ Completely shutdown the voice subsystem
 */
 static void Voice_Shutdown( void )
 {
-	int i;
-
-	Voice_RecordStop();
-
-	if( voice.goldsrc )
-		Voice_ShutdownGoldSrcMode();
-	else
-		Voice_ShutdownOpusCustomMode();
-
-	VoiceCapture_Shutdown();
-
-	if( voice.local.talking_ack )
-		Voice_Status( VOICE_LOOPBACK_INDEX, false );
-
-	for( i = 1; i <= MAX_CLIENTS; i++ )
-		Voice_Status( i, false );
+	Voice_Disconnect();
 
 	voice.initialized = false;
 	voice.is_recording = false;
-	voice.device_opened = false;
 	voice.goldsrc = false;
 	voice.start_time = 0.0;
 	voice.samplerate = 0;

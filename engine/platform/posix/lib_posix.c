@@ -31,11 +31,15 @@ GNU General Public License for more details.
 #ifdef XASH_IRIX
 #include "platform/irix/dladdr.h"
 #endif
+
 #include "common.h"
 #include "library.h"
 #include "filesystem.h"
 #include "server.h"
 #include "platform/android/lib_android.h"
+#if XASH_EMSCRIPTEN
+#include "platform/emscripten/lib_emscripten.h"
+#endif
 #include "platform/ios/lib_ios.h"
 
 #ifdef XASH_NO_LIBDL
@@ -153,12 +157,19 @@ void *COM_FunctionFromName( void *hInstance, const char *pName )
 
 const char *COM_NameForFunction( void *hInstance, void *function )
 {
+#ifdef XASH_EMSCRIPTEN && Platform_POSIX_GetFuncName
+	{
+		const char *sname = Platform_POSIX_GetFuncName( hInstance, function );
+		if ( sname )
+			return COM_GetPlatformNeutralName( sname );
+	}
+#else
 	// NOTE: dladdr() is a glibc extension
 	Dl_info info = {0};
 	int ret = dladdr( (void*)function, &info );
 	if( ret && info.dli_sname )
 		return COM_GetPlatformNeutralName( info.dli_sname );
-
+#endif
 #ifdef XASH_ALLOW_SAVERESTORE_OFFSETS
 	return COM_OffsetNameForFunction( function );
 #else

@@ -473,7 +473,7 @@ static inline int Cmd_AddCommandWithFlags( const char *cmd_name, xcommand_t func
 void Cmd_RemoveCommand( const char *cmd_name );
 cmd_t *Cmd_Exists( const char *cmd_name );
 void Cmd_LookupCmds( void *buffer, void *ptr, setpair_t callback );
-int Cmd_ListMaps( search_t *t , char *lastmapname, size_t len );
+int Cmd_ListMaps( search_t *t , char *lastmapname, size_t len, qboolean silent );
 void Cmd_TokenizeString( const char *text );
 void Cmd_ExecuteString( const char *text );
 void Cmd_ForwardToServer( void );
@@ -647,7 +647,6 @@ void Con_DPrintf( const char *fmt, ... ) FORMAT_CHECK( 1 );
 void Con_Printf( const char *szFmt, ... ) FORMAT_CHECK( 1 );
 int pfnNumberOfEntities( void );
 int pfnIsInGame( void );
-float pfnTime( void );
 #define copystring( s ) _copystring( host.mempool, s, __FILE__, __LINE__ )
 #define copystringpool( pool, s ) _copystring( pool, s, __FILE__, __LINE__ )
 #define SV_CopyString( s ) _copystring( svgame.stringspool, s, __FILE__, __LINE__ )
@@ -680,7 +679,7 @@ void pfnResetTutorMessageDecayData( void );
 //
 // con_utils.c
 //
-void Con_CompleteCommand( field_t *field );
+void Con_CompleteCommand( field_t *field, qboolean print_suggestions );
 void Cmd_AutoComplete( char *complete_string );
 void Cmd_AutoCompleteClear( void );
 void Host_InitializeConfig( file_t *f, const char *config, const char *description );
