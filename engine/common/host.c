@@ -1216,7 +1216,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 		return error_on_exit;
 #endif
 
-	host.starttime = Sys_DoubleTime();
+	host.starttime = Platform_DoubleTime();
 
 	pChangeGame = func;	// may be NULL
 
@@ -1366,7 +1366,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	// main window message loop
 	while( host.status != HOST_CRASHED )
 	{
-		double newtime = Sys_DoubleTime();
+		double newtime = Platform_DoubleTime();
 		COM_Frame( newtime - oldtime );
 		oldtime = newtime;
 	}

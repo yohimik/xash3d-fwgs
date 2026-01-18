@@ -124,7 +124,6 @@ REFDLLS = [
 	RefDll('gles2', False, 'GLWES'),
 	RefDll('gl4es', False),
 	RefDll('gles3compat', False, 'GLES3COMPAT'),
-	RefDll('webgl2', False, 'WEBGL2'),
 	RefDll('null', False),
 ]
 
@@ -437,6 +436,10 @@ def configure(conf):
 			conf.env.DEFAULT_RPATH = '@loader_path'
 		else:
 			conf.env.DEFAULT_RPATH = '$ORIGIN'
+
+	# Add webgl2 renderer for emscripten builds
+	if conf.env.DEST_OS == 'emscripten':
+		REFDLLS.insert(-1, RefDll('webgl2', False, 'WEBGL2'))
 
 	setattr(conf, 'refdlls', REFDLLS)
 

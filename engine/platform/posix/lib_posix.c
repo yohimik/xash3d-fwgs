@@ -37,8 +37,10 @@ GNU General Public License for more details.
 #include "filesystem.h"
 #include "server.h"
 #include "platform/android/lib_android.h"
+#if XASH_EMSCRIPTEN
 #include "platform/emscripten/lib_emscripten.h"
-#include "platform/apple/lib_ios.h"
+#endif
+#include "platform/ios/lib_ios.h"
 
 #ifdef XASH_NO_LIBDL
 void *dlsym( void *handle, const char *symbol )
@@ -155,7 +157,7 @@ void *COM_FunctionFromName( void *hInstance, const char *pName )
 
 const char *COM_NameForFunction( void *hInstance, void *function )
 {
-#ifdef Platform_POSIX_GetFuncName
+#ifdef XASH_EMSCRIPTEN && Platform_POSIX_GetFuncName
 	{
 		const char *sname = Platform_POSIX_GetFuncName( hInstance, function );
 		if ( sname )

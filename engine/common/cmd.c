@@ -1031,15 +1031,12 @@ static void Cmd_ExecuteStringWithPrivilegeCheck( const char *text, qboolean isPr
 	}
 }
 
-#ifdef XASH_EMSCRIPTEN
+#if XASH_EMSCRIPTEN
 #include <emscripten.h>
-#define EXPORT_EM EMSCRIPTEN_KEEPALIVE
+EMSCRIPTEN_KEEPALIVE void Cmd_ExecuteString( const char *text )
 #else
-#define EXPORT_EM
-#endif
-
-EXPORT_EM
 void Cmd_ExecuteString( const char *text )
+#endif
 {
 	Cmd_ExecuteStringWithPrivilegeCheck( text, true );
 }

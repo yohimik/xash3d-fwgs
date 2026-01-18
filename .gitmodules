@@ -1,6 +1,6 @@
 [submodule "mainui"]
 	path = 3rdparty/mainui
-	url = https://github.com/yohimik/mainui_cpp
+	url = https://github.com/FWGS/mainui_cpp
 [submodule "ref_gl/nanogl"]
 	path = 3rdparty/nanogl
 	url = https://github.com/FWGS/nanogl
@@ -42,4 +42,4 @@
 	url = https://github.com/FWGS/xash3d-maintui.git
 [submodule "3rdparty/library_suffix"]
 	path = 3rdparty/library_suffix
-	url = https://github.com/FWGS/library-suffix.git
+	url = https://github.com/ololoken/library-suffix.git

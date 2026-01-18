@@ -704,16 +704,6 @@ static qboolean RectFitsInDisplay( const SDL_Rect *rect, const SDL_Rect *display
 		&& rect->x + rect->w <= display->x + display->w
 		&& rect->y + rect->h <= display->y + display->h;
 }
-// Function to check if the rectangle fits in any display
-static qboolean RectFitsInAnyDisplay( const SDL_Rect *rect, const SDL_Rect *display_rects, int num_displays )
-{
-	for( int i = 0; i < num_displays; i++ )
-	{
-		if( RectFitsInDisplay( rect, &display_rects[i] ))
-			return true; // Rectangle fits in this display
-	}
-	return false; // Rectangle does not fit in any display
-}
 
 /*
 =================
@@ -734,11 +724,10 @@ static qboolean VID_CreateWindow( const int input_width, const int input_height,
 	if( !glw_state.software )
 		SetBits( flags, SDL_WINDOW_OPENGL );
 
-#if XASH_EMSCRIPTEN // chromium based browsers have a bug with dynamic alpha channel attribute update.
-	SDL_GL_SetAttribute( SDL_GL_ALPHA_SIZE, 0 );
-#endif
+	if( position_undefined )
+		rect.x = rect.y = SDL_WINDOWPOS_UNDEFINED;
 
-	if( window_mode == WINDOW_MODE_WINDOWED )
+	switch( window_mode )
 	{
 	// in windowed mode, we only want to ensure that
 	// window fits on any display, and if not, reset position
@@ -817,6 +806,10 @@ static qboolean VID_CreateWindow( const int input_width, const int input_height,
 		break;
 	}
 	}
+
+#if XASH_EMSCRIPTEN // chromium based browsers have a bug with dynamic alpha channel attribute update.
+	SDL_GL_SetAttribute( SDL_GL_ALPHA_SIZE, 0 );
+#endif
 
 	if( !VID_CreateWindowWithSafeGL( GI->title, &rect, flags ))
 		return false;

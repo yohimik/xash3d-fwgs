@@ -25,7 +25,9 @@ GNU General Public License for more details.
 #include <SDL_thread.h>
 #endif
 
-#if XASH_EMSCRIPTEN
+#if XASH_LIB_OUTPUT
+#include "platform/lib/net_lib.h"
+#elif XASH_EMSCRIPTEN
 #include "platform/emscripten/net_emscripten.h"
 #endif
 
@@ -1428,7 +1430,7 @@ qboolean NET_GetPacket( netsrc_t sock, netadr_t *from, byte *data, size_t *lengt
 	}
 }
 
-#if !XASH_EMSCRIPTEN && NET_USE_SEND_BATCH
+#if (!XASH_LIB_OUTPUT && !XASH_EMSCRIPTEN) && NET_USE_SEND_BATCH
 int sendto_batch(int sock,
                  char *fragments[],
                  int sizes[],
@@ -2277,4 +2279,5 @@ void NET_Shutdown( void )
 #endif
 	net.initialized = false;
 }
+
 
