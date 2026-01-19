@@ -227,9 +227,26 @@ def get_optimization_flags(conf):
 
 	cflags = conf.get_flags_by_type(CFLAGS, conf.options.BUILD_TYPE, conf.env.COMPILER_CC, conf.env.CC_VERSION[0])
 
+	# Enable symbol export for library output (XASH_LIB_OUTPUT) - fixes AmxModX hooking
+	if conf.options.DEDICATED or getattr(conf.options, 'ENABLE_DEDICATED', False):
+		if conf.env.COMPILER_CC in ['gcc', 'clang']:
+			# change visibility from hidden to default
+			if '-fvisibility=hidden' in cflags:
+				cflags.remove('-fvisibility=hidden')
+				cflags.append('-fvisibility=default')
+			if conf.options.BUILD_TYPE == 'debug':
+				linkflags.append('-no-pie')
+				cflags += ['-O0', '-g', '-fno-omit-frame-pointer', '-fno-pie']
+		if conf.env.COMPILER_CC == 'gcc':
+			linkflags.append('-Wl,--export-dynamic')
+
 	if conf.options.LTO:
 		linkflags+= conf.get_flags_by_compiler(LTO_LINKFLAGS, conf.env.COMPILER_CC)
 		cflags   += conf.get_flags_by_compiler(LTO_CFLAGS, conf.env.COMPILER_CC)
+		# Extra LTO flags for symbol export (XASH_LIB_OUTPUT)
+		if conf.options.DEDICATED or getattr(conf.options, 'ENABLE_DEDICATED', False):
+			if conf.env.COMPILER_CC == 'gcc':
+				cflags += ['-ffat-lto-objects', '-fno-ipa-cp-clone']
 
 	if conf.options.POLLY:
 		cflags   += conf.get_flags_by_compiler(POLLY_CFLAGS, conf.env.COMPILER_CC)
